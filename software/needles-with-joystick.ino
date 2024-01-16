@@ -129,12 +129,6 @@ int clockCounter=0;
 // gate length. changes automatically with clock division
 byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5}; // {16,12,8,6,5,4,3,3,2,2}
 
-// voicing - using tie+shift buttons
-byte voicingCCVal[7] = {10,26,45,65,82,100,118};
-byte voicingVal[7] = {4,5,3,15,6,1,2};  //{poly,cyclic,random,vel,sort,U1,U2};
-int voicingNums = 7;
-int voicingCounter=0;
-
 // euclidean cc
 byte euclideanCCVal[33] = {0,4,8,12,16,20,24,28,32,35,39,43,47,51,55,59,63,66,70,74,78,82,86,90,94,97,101,105,109,113,117,121,125};
 byte euclideanVal[33] = {0,1,2,3,4,5,6,7,8,9,1,1,2,3,4,5,6,7,8,9,2,1,2,3,4,5,6,7,8,9,3,1,2};  // 0-32 steps length;
@@ -156,13 +150,12 @@ byte cc[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte pot[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte lastpot[] = {0, 0, 0, 0, 0, 0, 0, 0};
 //Define cc number of each pot
-byte midi_cc[] = {104, 105, 106, 25, 23, 27, 1, 5};
+
+byte midi_cc[] = {104, 105, 106, 19, 23, 21, 1, 5};
 
 //Don't change the first one this will be used by the EL/ARP switcher
-//Others can be changed to your desire
-
-//90 why
-byte shift_cc[] = {0, 83, 21, 74, 77, 78, 79, 80};
+// TODO: cc 27 is tuning system will this be used? is there a more usefull shift function?
+byte shift_cc[] = {0, 83, 27, 74, 77, 78, 79, 80};
 
 #define midiButton 7 // mcpArray[1]
 byte MidiButtonState = 0;
@@ -241,7 +234,33 @@ boolean eucStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean holdStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscMode[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscEnv[8] = { 0,0,0,0,0,0,0,0 };
-int loopLengthStates[8] = { 4,4,4,4,4,4,4,4 };
+int loopLengthStates[8] = { 8,8,8,8,8,8,8,8 };
+
+//16 options
+//128/15 = 8.5333
+//1 velocity = 0
+//2 modulation wheel = 9 not included
+//3 aftertouch = 19 not included
+//4 breath = 28
+//5 pedal = 35 not included
+//6 bend range = 43
+//7 vibrato lfo = 52
+//8 lfo = 60
+//9 envelope = 69
+
+// HOLD shift extra to fm ratios
+//10 1/1 = 77
+//11 1/2 = 86
+//12 1/3 = 94
+//13 1/5 = 103
+//14 1/7 = 111
+//15 2/5 = 120
+//16 2/7 = 128
+
+int cvAuxOutIndex[8] = { 0,0,0,0,0,0,0,0 };
+byte cvAuxOut[6] = {0,28,43,52,60,69};
+int cvAuxOutAltIndex[8] = { 0,0,0,0,0,0,0,0 };
+byte cvAuxOutAlt[7] = {77,86,94,103,111,118,127};
 
 int isRecording = 0;
 int arpLedFix;
@@ -483,12 +502,7 @@ void loop() {
             }
         }
     } else if(fourTState==LOW) {
-        //find out what to do with this
-        // xtraVal=analogRead(xtraAnalog);
-        // if (xtraVal != xtraValState){
-        //     //arp things on joysticks are no fun
-        //     // MIDI.sendControlChange(104,map(xtraVal,0,1020,0,127),midiChannel);
-        // }
+        //TODO: at this point this does nothing. Is there a more usefull function?
     } else {
         xtraVal=analogRead(xtraAnalog);
         if (xtraVal != xtraValState){
@@ -938,8 +952,6 @@ void loop() {
     }
     slideLastState = slideState;
 
-    oscON=oscMapped/19; // 7 osc shapes
-
     if (oscMapped != oscLastMapped && shiftState==LOW){
         //loom if lower then toggle osc mode and shift
         if (oscMapped > 8) {
@@ -956,11 +968,15 @@ void loop() {
             oscMode[midiChannel] = 0;
             MIDI.sendControlChange(70,0,midiChannel);
         }
-        oscShape(oscON);
-    }
-    if (oscMapped != oscLastMapped && shiftState==HIGH){
+        spinningShape(oscMapped/8);
+    } else if (oscMapped != oscLastMapped && shiftState==HIGH){
         //loom pwm init no shift
-        MIDI.sendControlChange(82,oscMapped,midiChannel);
+        if (oscMode[midiChannel] == 1) {
+            MIDI.sendControlChange(82,oscMapped,midiChannel);
+        } else {
+            MIDI.sendControlChange(95,oscMapped,midiChannel);
+        }  
+        spinningShape(oscMapped/8);
     }
 
     oscLastMapped = oscMapped;
@@ -1043,6 +1059,13 @@ void loop() {
                 //different scaling for hold pedal mode makes 0 not off but sustain
                 int holdMap = map(cc[z], 0, 127, 20, 127);
                 MIDI.sendControlChange(shift_cc[z],holdMap,midiChannel);
+            } else if(shift_cc[z] == 77 || shift_cc[z] == 78 || shift_cc[z] == 79 || shift_cc[z] == 80) {
+                //This changes cv aux out to envelope if changing evelope and not having a oscillator selected
+                if(oscMode[midiChannel] == 0 && cvAuxOutIndex[midiChannel] != 5) {
+                   cvAuxOutIndex[midiChannel] = 5;
+                   MIDI.sendControlChange(31,69,midiChannel);
+                }
+                MIDI.sendControlChange(shift_cc[z],cc[z],midiChannel);
             } else {
                 MIDI.sendControlChange(shift_cc[z],cc[z],midiChannel);
             }
@@ -1065,7 +1088,7 @@ void loop() {
                 if(eucStates[midiChannel]==1) {
                     MIDI.sendControlChange(109,cc[z],midiChannel);
                 } else {
-                    MIDI.sendControlChange(25,cc[z],midiChannel);
+                    MIDI.sendControlChange(19,cc[z],midiChannel);
                 }
             } else {
                 MIDI.sendControlChange(midi_cc[z],cc[z],midiChannel);
@@ -1151,37 +1174,66 @@ void loop() {
         }
     }
 
-    if (stepStates[midiChannel]==1 || loopStates[midiChannel]==1) {
+    // shutdown recording if a channel is still recording
+    if (isRecording > 0) {
+        if (extraState != extraLastState) {
+            if (extraState == LOW&&shiftState==HIGH) {
+                MIDI.sendControlChange(110,0,isRecording); // loom recording off
+                isRecording = 0;
+            }
+        }
+        if (extraState == LOW&&shiftState==LOW) {
+            MIDI.sendControlChange(111,127,isRecording); // loom delete recording
+        }
+    } else if (stepStates[midiChannel]==1 || loopStates[midiChannel]==1) {
         if (extraState != extraLastState) {
             if (extraState == LOW&&shiftState==HIGH) {
                 if(isRecording==0) {
-                    isRecording = 1;
+                    isRecording = midiChannel;
                     MIDI.sendControlChange(110,127,midiChannel); // loom recording on
-                } else {
-                    isRecording = 0;
-                    MIDI.sendControlChange(110,0,midiChannel); // loom recording off
                 }
             }
             if (extraState == LOW&&shiftState==LOW) {
                 MIDI.sendControlChange(111,127,midiChannel); // loom delete recording
             }
         }
-    } else {
+    } else if (oscMode[midiChannel] == 0) {
+        // if not recording and not in loop or step mode change aux out
         if (extraState != extraLastState) {
             if (extraState == LOW&&shiftState==HIGH) {
+                cvAuxOutAltIndex[midiChannel] = 0;
+                if (cvAuxOutIndex[midiChannel] < 5){
+                    cvAuxOutIndex[midiChannel]++;
+                } else {
+                    cvAuxOutIndex[midiChannel] = 0;
+                }
+                MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],midiChannel);
+            }
+            if (extraState == LOW&&shiftState==LOW) {
+                cvAuxOutIndex[midiChannel] = 0;
+                if (cvAuxOutAltIndex[midiChannel] < 6){
+                    cvAuxOutAltIndex[midiChannel]++;
+                } else {
+                    cvAuxOutAltIndex[midiChannel] = 0;
+                }
+                MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],midiChannel);
+            }
+        }
+    } else {
+        if (extraState != extraLastState) {
+            if (extraState == LOW && oscMapped > 18) {
                 if(oscEnv[midiChannel] == 0) {
                     oscEnv[midiChannel] = 1;
-                    if (oscState==LOW && oscMapped > 18){
-                        MIDI.sendControlChange(70,127,midiChannel);
-                    }
+                    MIDI.sendControlChange(70,127,midiChannel);
                 } else {
                     oscEnv[midiChannel] = 0;
-                    if (oscState==LOW && oscMapped > 18){
-                        MIDI.sendControlChange(70,70,midiChannel);
-                    }
+                    MIDI.sendControlChange(70,70,midiChannel);
                 }
             }
         }
+        //TODO can shift extra do something when you have a osc?
+        //Idea is to switch shift DIR from lfo to env modulation and back
+        //Other idea is to have lfo and env when you are in osc mode on DIR and PAT pots
     }
     extraLastState = extraState;
 
@@ -1213,8 +1265,8 @@ void loop() {
             transposeShape(responseStates[midiChannel]);
         }
     }
-    legatoLastState = legatoState;
 
+    legatoLastState = legatoState;
 
     if (legatoStates[midiChannel] == 1){
         digitalWrite(legatoLed, HIGH);
