@@ -45,38 +45,38 @@ byte num_array[10][7] = {
 
 // segment display letters
 byte letter_array[33][7] = {
-    {0,1,1,1,1,1,1},  // up - arp directions --- linear
-    {1,1,0,0,0,1,1}, // down --- bounce
-    {1,1,0,1,1,0,1}, // up/down --- random
-    {0,1,0,0,0,0,1}, // random -- rotate by step
-    {0,0,1,0,0,0,1}, // played -- subrotate by step
-    {0,1,1,0,0,0,1}, // chord
-    {0,1,0,0,1,0,0}, // S for slide or sequence
-    {1,1,1,0,0,0,1}, // L for legato
-    {1,1,0,0,0,1,0}, // square - trigger shapes
-    {1,1,1,0,0,0,1}, // linear
-    {0,1,1,0,0,0,0}, // expo
-    {0,0,0,0,0,0,1}, // ring
-    {1,0,1,1,0,1,0}, // step
-    {1,1,0,0,0,0,0}, // burst
-    {1,1,1,0,0,0,0}, // t - for trigger velocity scale
-    {1,0,0,0,0,0,1}, // v
-    {1,1,1,1,1,1,0}, // off
-    {0,1,0,0,1,0,0}, // saw
-    {0,0,0,1,0,0,1}, // 25% rect
-    {1,1,0,0,0,1,0}, // square
-    {1,1,1,0,0,0,0}, // tri
-    {1,0,1,1,0,1,0}, // sine
-    {0,0,0,0,0,0,0},  // noise
-    {0,1,1,0,1,1,1},  // transpose
-    {0,0,0,1,0,0,0},  // replace
-    {0,0,0,0,0,0,1},  // direct
-    {0,1,0,0,0,0,1}, //spinning wheel start
+    {0,1,1,1,1,1,1},  // up - arp directions --- linear 0
+    {1,1,0,0,0,1,1}, // down --- bounce 1
+    {1,1,0,1,1,0,1}, // up/down --- random 2
+    {0,1,0,0,0,0,1}, // random -- rotate by step 3
+    {0,0,1,0,0,0,1}, // played -- subrotate by step 4
+    {0,1,1,0,0,0,1}, // chord 5
+    {0,1,0,0,1,0,0}, // S for slide or sequence 6
+    {1,1,1,0,0,0,1}, // L for legato 7
+    {1,1,0,0,0,1,0}, // square - trigger shapes 8
+    {1,1,1,0,0,0,1}, // linear 9
+    {0,1,1,0,0,0,0}, // expo 10
+    {0,0,0,0,0,0,1}, // ring 11
+    {1,0,1,1,0,1,0}, // step 12
+    {1,1,0,0,0,0,0}, // burst 13
+    {1,1,1,0,0,0,0}, // t - for trigger velocity scale  14
+    {1,0,0,0,0,0,1}, // v 15
+    {1,1,1,1,1,1,0}, // off 16
+    {0,1,0,0,1,0,0}, // saw 17
+    {0,0,0,1,0,0,1}, // 25% rect 18
+    {1,1,0,0,0,1,0}, // square 19
+    {1,1,1,0,0,0,0}, // tri 20
+    {1,0,1,1,0,1,0}, // sine 21
+    {0,0,0,0,0,0,0},  // noise 22
+    {0,1,1,0,1,1,1},  // transpose 23
+    {0,0,0,1,0,0,0},  // replace 24
+    {0,0,0,0,0,0,1},  // direct 25
+    {0,1,0,0,0,0,1},  //spinning wheel start
     {0,0,1,0,0,0,1},
     {0,0,0,1,0,0,1},
     {0,0,0,0,1,0,1},
     {0,0,0,0,0,1,1},
-    {1,0,0,0,0,0,1}  //spinning wheel end
+    {1,0,0,0,0,0,1}   //spinning wheel end
 };
 
 /*
@@ -151,11 +151,10 @@ byte pot[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte lastpot[] = {0, 0, 0, 0, 0, 0, 0, 0};
 //Define cc number of each pot
 
-byte midi_cc[] = {104, 105, 106, 19, 23, 21, 1, 5};
+byte midi_cc[] = {104, 105, 106, 25, 23, 21, 1, 5};
 
 //Don't change the first one this will be used by the EL/ARP switcher
-// TODO: cc 27 is tuning system will this be used? is there a more usefull shift function?
-byte shift_cc[] = {0, 83, 27, 74, 77, 78, 79, 80};
+byte shift_cc[] = {0, 25, 27, 74, 77, 78, 79, 80};
 
 #define midiButton 7 // mcpArray[1]
 byte MidiButtonState = 0;
@@ -234,7 +233,23 @@ boolean eucStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean holdStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscMode[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscEnv[8] = { 0,0,0,0,0,0,0,0 };
-int loopLengthStates[8] = { 8,8,8,8,8,8,8,8 };
+
+byte modelStart[3] = {0, 11, 63};
+byte modelEnd[3] = {10, 62, 128};
+int modelIndex[8] = { 0,0,0,0,0,0,0,0 }; // 0 = noise 1 = classic 2 = fm
+
+// 4 noise
+// 21 classic
+// 26 fm
+
+// IDEA: if it's still to much we can split
+// but then we need to press modelIndex more often...
+// 4 noise
+// 13 classic
+// 8 west coast
+// 11 fm
+// 15 wierd fm
+
 
 //16 options
 //128/15 = 8.5333
@@ -261,6 +276,7 @@ int cvAuxOutIndex[8] = { 0,0,0,0,0,0,0,0 };
 byte cvAuxOut[6] = {0,28,43,52,60,69};
 int cvAuxOutAltIndex[8] = { 0,0,0,0,0,0,0,0 };
 byte cvAuxOutAlt[7] = {77,86,94,103,111,118,127};
+int notePriorityVal[8] = { 0,0,0,0,0,0,0,0 };
 
 int isRecording = 0;
 int arpLedFix;
@@ -301,7 +317,12 @@ char notes[18]={0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};   //pin setup for 
 boolean noteOn[18]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};    //button state
 boolean noteLast[18]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};   //last button state
 boolean notesPressed[18]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
-char noteCount=18;
+const int noteCount = 18;
+
+//Loom strumm keyboard TODO
+int noteOnDelay = 4;  // Delay before a note is turned on, in milliseconds
+int noteOffDelay = 4;  // Delay before a note is turned off, in milliseconds
+int lastNoteStriked = -1; // Last note turned on
 
 // Octave keys
 char changePins[2]={3,4}; // octave up/down mcpArray[1]
@@ -315,6 +336,7 @@ int changekeys(int a,int b){  //function to change key base
     keysLast=a+b;
     return(keysLast);
 }
+
 
 void setup() {
     // various
@@ -406,7 +428,6 @@ void setup() {
     // MIDI.begin();
 }
 
-
 void loop() {
     MIDI.read();
     // 7 Segment
@@ -471,6 +492,9 @@ void loop() {
                 mcpArray[1].digitalWrite(10, 0);
                 strummStates[midiChannel]=1;
 
+                // Center portamento because it wont work well with strumm.
+                MIDI.sendControlChange(5,64,midiChannel);
+
                 if (arpStates[midiChannel]==1){
                     arpStates[midiChannel]=0;
                     MIDI.sendControlChange(114,0,midiChannel);
@@ -484,9 +508,10 @@ void loop() {
     xtraVal7=analogRead(xtraAnalog7);
     if (xtraVal7 != xtraValState7){
         if(fourTState==LOW) {
-            //Joystick to velocity
+            //Y axis to velocity
             velocityJoystick = xtraVal7;
         } else {
+            //Y axis to breath
             MIDI.sendControlChange(2,map(xtraVal7,0,1020,127,0),2);
         }
     }
@@ -494,6 +519,7 @@ void loop() {
     xtraValState7 = xtraVal7;
 
     if(oscState==LOW){
+        //X axis to pitch bend
         int pitchBendValMapped = analogRead(xtraAnalog) - 512; // 0 at mid point
         if ( abs(pitchBendValMapped - xtraValState) > 1)  { // have we moved enough to avoid analog jitter?
             if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
@@ -502,8 +528,9 @@ void loop() {
             }
         }
     } else if(fourTState==LOW) {
-        //TODO: at this point this does nothing. Is there a more usefull function?
+        //IDEA: what to do with X axis when Y controls velocity?
     } else {
+        //X axis to breath
         xtraVal=analogRead(xtraAnalog);
         if (xtraVal != xtraValState){
             MIDI.sendControlChange(2,map(xtraVal,0,1020,0,127),1);
@@ -528,6 +555,17 @@ void loop() {
         }
         //change octaves - if modifier buttons 1 or 2 are pressed
         if(changeButton[i]==HIGH&&changeButtonLast[i]!=changeButton[i] && shiftState==HIGH){
+            //TODO hard fix strumm notes off
+            if(strummStates[midiChannel] == 1) {
+                for(char n=0;n<noteCount;n++){
+                    // noteOn[n]=mcpArray[(notes[n]>>4)].digitalRead(notes[n] & 0x0F);
+                    //loom notes pressed
+                    MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
+                    notesPressed[n]=0;
+                    lastNoteStriked = -1;
+                    // noteLast[n]=noteOn[n];
+                }
+            }
             for(char n=0;n<noteCount;n++){
                 // noteOn[n]=mcpArray[(notes[n]>>4)].digitalRead(notes[n] & 0x0F);
                 //loom notes pressed
@@ -603,8 +641,8 @@ void loop() {
 
     //blinky lights
     if(strummStates[midiChannel]==1) {
-        mcpArray[1].digitalWrite(arpLed, (millis() / blinkyInterval) % 2);
-        mcpArray[2].digitalWrite(euclidean, (millis() / blinkyInterval) % 2);
+        mcpArray[1].digitalWrite(arpLed, (millis() / (blinkyInterval/2)) % 2);
+        mcpArray[2].digitalWrite(euclidean, (millis() / (blinkyInterval/2)) % 2);
     }
 
     if(loopStates[midiChannel]==1) {
@@ -622,7 +660,7 @@ void loop() {
     }
 
     if(holdStates[midiChannel] == 1) {
-        mcpArray[1].digitalWrite(shiftLedPin, (millis() / 100) % 2);
+        mcpArray[1].digitalWrite(shiftLedPin, (millis() / (blinkyInterval/2)) % 2);
     } else {
         holdCheck = 0;
         for (int n=0; n < 8; n++){
@@ -636,43 +674,53 @@ void loop() {
 
     //loop for the 17 button keyboard
     for(char n=0;n<noteCount;n++){
-        noteOn[n]=mcpArray[(notes[n]>>4)].digitalRead(notes[n] & 0x0F);
+        noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
+
         if(strummStates[midiChannel]==1) {
+            // New strumm version TODO
              if(noteOn[n]==HIGH&&noteLast[n]!=noteOn[n]){
-                MIDI.sendNoteOn(keysLast+n,velocityMap,midiChannel);
-                noteLast[n]=noteOn[n];
-                if (slideOn==1){ // turns "S" seg off
-                    digitalWrite(tensAnode, HIGH);
-                    slideOn=0;
+                if(lastNoteStriked!=-1){
+                    MIDI.sendNoteOff(keysLast+lastNoteStriked,velocityMap,midiChannel);
+                    delay(noteOnDelay);
                 }
-                //dirty delay for strumm -- change this to millis
-                delay(4);
-                MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
-                delay(3);
+
+                lastNoteStriked = n;
+                MIDI.sendNoteOn(keysLast+n,velocityMap,midiChannel);
+                delay(noteOffDelay);
+                noteLast[n]=noteOn[n];
             }
             if(noteLast[n]!=noteOn[n]){ //if last keyboard state changes
-                noteLast[n]=noteOn[n];
-            }
-        } else {
-            //loom notes pressed
-            if(noteOn[n]==HIGH&&noteLast[n]!=noteOn[n]){ //if a key(s) is pressed
-                MIDI.sendNoteOn(keysLast+n,velocityMap,midiChannel);
-                noteLast[n]=noteOn[n];
-                notesPressed[n]=1;
-                if (slideOn==1){
-                    digitalWrite(tensAnode, HIGH);
-                    slideOn=0;
-                }
-            }
-            if(noteLast[n]!=noteOn[n]){ //if last keyboard state changes
-                noteLast[n]=noteOn[n];
-                if(notesPressed[n]==1) {
+                if(noteOn[n]==LOW && lastNoteStriked==n){
                     MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
+                    lastNoteStriked = -1;
+                    noteLast[n]=noteOn[n];
+                } else {
+                    noteLast[n]=noteOn[n];
                 }
-                notesPressed[n]=0;
             }
-        }
-    }
+
+                // END
+                } else {
+                    //loom notes pressed
+                    if(noteOn[n] == HIGH && noteLast[n] != noteOn[n]){ //if a key(s) is pressed
+                        MIDI.sendNoteOn(keysLast+n,velocityMap,midiChannel);
+                        noteLast[n] = noteOn[n];
+                        notesPressed[n]=1;
+                        if (slideOn==1){
+                            digitalWrite(tensAnode, HIGH);
+                            slideOn=0;
+                        }
+                    }
+
+                    if(noteOn[n] == LOW && noteLast[n] != noteOn[n]){ //if last keyboard state changes
+                        noteLast[n] = noteOn[n];
+                        if(notesPressed[n]==1) {
+                            MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
+                        }
+                        notesPressed[n]=0;
+                    }
+                }
+            }
 
     // read the state button pins:
     tieState = digitalRead(tiePin);
@@ -686,184 +734,205 @@ void loop() {
     oscState = digitalRead(oscPin);
     fourTState = digitalRead(fourTPin);
 
-    if (loopStates[midiChannel]==1){
-        // loom loop length
+    if (stepStates[midiChannel] == 1  && isRecording == 1){ // if euclidean is off then use these buttons to step 3 or 7 - bigger rest and tie steps
         if (wholeNoteState != wholeNoteLastState) {
             if (wholeNoteState == LOW&&shiftState==HIGH) {
-                //quarter 3
-                if(loopLengthStates[midiChannel] < 124) {
-                    loopLengthStates[midiChannel] = loopLengthStates[midiChannel] + 4;
-                    MIDI.sendControlChange(84,loopLengthStates[midiChannel],midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+
+                mcpArray[2].digitalWrite(tensDP, HIGH);
+                digitalWrite(tensAnode, LOW);
+                for (int f=0; f < 7; f++) {
+                    mcpArray[2].digitalWrite(tens[f], num_array[3][f]);
                 }
+                slideOn=1;
             }
             if (shiftState==LOW&&wholeNoteState == LOW){
-                //BAR 3
-                if(loopLengthStates[midiChannel] < 124) {
-                    loopLengthStates[midiChannel] = loopLengthStates[midiChannel] + 1;
-                    MIDI.sendControlChange(84,loopLengthStates[midiChannel],midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+
+                mcpArray[2].digitalWrite(tensDP, LOW);
+                digitalWrite(tensAnode, LOW);
+                for (int f=0; f < 7; f++) {
+                    mcpArray[2].digitalWrite(tens[f], num_array[3][f]);
                 }
+                slideOn=1;
             }
         }
-        wholeNoteLastState = wholeNoteState;
 
         if (thirdNoteState != thirdNoteLastState) {
             if (thirdNoteState == LOW&&shiftState==HIGH) {
-                //quarter 3
-                if(loopLengthStates[midiChannel] < 5) {
-                    loopLengthStates[midiChannel] = 4;
-                } else {
-                    loopLengthStates[midiChannel] = loopLengthStates[midiChannel] - 4;
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
+
+                mcpArray[2].digitalWrite(tensDP, HIGH);
+                digitalWrite(tensAnode, LOW);
+                for (int f=0; f < 7; f++) {
+                    mcpArray[2].digitalWrite(tens[f], num_array[7][f]);
                 }
-                MIDI.sendControlChange(84,loopLengthStates[midiChannel],midiChannel);
+                slideOn=1;
             }
 
             if (shiftState==LOW&&thirdNoteState == LOW){
-                //BAR 3
-                if(loopLengthStates[midiChannel] != 1) {
-                    loopLengthStates[midiChannel] = loopLengthStates[midiChannel] - 1;
-                    MIDI.sendControlChange(84,loopLengthStates[midiChannel],midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+                MIDI.sendControlChange(restChannel,127,midiChannel);
+
+                mcpArray[2].digitalWrite(tensDP, LOW);
+                digitalWrite(tensAnode, LOW);
+                for (int f=0; f < 7; f++) {
+                    mcpArray[2].digitalWrite(tens[f], num_array[7][f]);
                 }
+                slideOn=1;
+
             }
         }
-        thirdNoteLastState = thirdNoteState;
+    } else if (eucStates[midiChannel] == 1 && (arpStates[midiChannel] == 1 || stepStates[midiChannel] == 1) ){ // if Euclidean is ON use the two buttons for plus/minus euclidean length, up to 32 steps
+        if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
+            if (euclideanCounter[midiChannel] < euclideanNums-1){
+                euclideanCounter[midiChannel]++;
+            } else {
+                euclideanCounter[midiChannel] = 0;
+            }
+
+            MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
+            digitalWrite(tensAnode, LOW);
+            if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
+                mcpArray[2].digitalWrite(tensDP, LOW);
+            } else {
+                mcpArray[2].digitalWrite(tensDP, HIGH);
+            }
+            for (int b=0; b < 7; b++) {
+                mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[midiChannel]]%10][b]);
+            }
+        }
+
+        if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
+            if (euclideanCounter[midiChannel] > 0){
+                euclideanCounter[midiChannel]--;
+            } else {
+                euclideanCounter[midiChannel] = 32;
+            }
+                MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
+                digitalWrite(tensAnode, LOW);
+
+            if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
+                mcpArray[2].digitalWrite(tensDP, LOW);
+            } else {
+                mcpArray[2].digitalWrite(tensDP, HIGH);
+            }
+            for (int b=0; b < 7; b++) {
+                mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[midiChannel]]%10][b]);
+            }
+        }
+    } else if (oscMode[midiChannel] == 1) {
+        //3 changes drone to env
+        if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
+            if(oscEnv[midiChannel] == 0) {
+                oscEnv[midiChannel] = 1;
+                MIDI.sendControlChange(70,127,midiChannel);
+            } else {
+                oscEnv[midiChannel] = 0;
+                MIDI.sendControlChange(70,70,midiChannel);
+            }
+           
+        }
+
+        if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
+            modelIndex[midiChannel]++;
+            if(modelIndex[midiChannel] > 2) {
+                modelIndex[midiChannel] = 0;
+            }
+            //7 changes model
+            //change model
+            MIDI.sendControlChange(71,modelStart[modelIndex[midiChannel]],midiChannel);
+        }
     } else {
-        if (midi_cc[2] == 106){ // if euclidean is off then use these buttons to step 3 or 7 - bigger rest and tie steps
-            if (wholeNoteState != wholeNoteLastState) {
-                if (wholeNoteState == LOW&&shiftState==HIGH) {
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-
-                    mcpArray[2].digitalWrite(tensDP, HIGH);
-                    digitalWrite(tensAnode, LOW);
-                    for (int f=0; f < 7; f++) {
-                        mcpArray[2].digitalWrite(tens[f], num_array[3][f]);
-                    }
-                    slideOn=1;
+        //3 is advance 7 is back. shift is cv aux out no shift is fm ratio?
+        //3 advances cv aux out
+        if (wholeNoteState != wholeNoteLastState) {
+            if (wholeNoteState == LOW&&shiftState==LOW) {
+                cvAuxOutAltIndex[midiChannel] = 0;
+                if (cvAuxOutIndex[midiChannel] < 5){
+                    cvAuxOutIndex[midiChannel]++;
+                } else {
+                    cvAuxOutIndex[midiChannel] = 0;
                 }
-                if (shiftState==LOW&&wholeNoteState == LOW){
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-
-                    mcpArray[2].digitalWrite(tensDP, LOW);
-                    digitalWrite(tensAnode, LOW);
-                    for (int f=0; f < 7; f++) {
-                        mcpArray[2].digitalWrite(tens[f], num_array[3][f]);
-                    }
-                    slideOn=1;
-                }
+                MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],midiChannel);
             }
-
-            wholeNoteLastState = wholeNoteState;
-
-            if (thirdNoteState != thirdNoteLastState) {
-                if (thirdNoteState == LOW&&shiftState==HIGH) {
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-                    MIDI.sendControlChange(tieChannel,127,midiChannel);
-
-                    mcpArray[2].digitalWrite(tensDP, HIGH);
-                    digitalWrite(tensAnode, LOW);
-                    for (int f=0; f < 7; f++) {
-                        mcpArray[2].digitalWrite(tens[f], num_array[7][f]);
-                    }
-                    slideOn=1;
+            if (wholeNoteState == LOW&&shiftState==HIGH) {
+                cvAuxOutIndex[midiChannel] = 0;
+                if (cvAuxOutAltIndex[midiChannel] < 6){
+                    cvAuxOutAltIndex[midiChannel]++;
+                } else {
+                    cvAuxOutAltIndex[midiChannel] = 0;
                 }
-
-                if (shiftState==LOW&&thirdNoteState == LOW){
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-                    MIDI.sendControlChange(restChannel,127,midiChannel);
-
-                    mcpArray[2].digitalWrite(tensDP, LOW);
-                    digitalWrite(tensAnode, LOW);
-                    for (int f=0; f < 7; f++) {
-                        mcpArray[2].digitalWrite(tens[f], num_array[7][f]);
-                    }
-                    slideOn=1;
-
-                }
+                MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],midiChannel);
             }
-
-            thirdNoteLastState = thirdNoteState;
-
         }
-
-        if (midi_cc[2] == 108){ // if Euclidean is ON use the two buttons for plus/minus euclidean length, up to 32 steps
-            if (wholeNoteState != wholeNoteLastState) {
-                if (wholeNoteState == LOW){
-                    if (euclideanCounter[midiChannel] < euclideanNums-1){
-                        euclideanCounter[midiChannel]++;
-                    } else {
-                        euclideanCounter[midiChannel] = 0;
-                    }
-
-                    MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
-                    digitalWrite(tensAnode, LOW);
-                    if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
-                        mcpArray[2].digitalWrite(tensDP, LOW);
-                    } else {
-                        mcpArray[2].digitalWrite(tensDP, HIGH);
-                    }
-                    for (int b=0; b < 7; b++) {
-                        mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[midiChannel]]%10][b]);
-                    }
+        
+        //7 goes back
+        if (thirdNoteState != thirdNoteLastState) {
+            if (thirdNoteState == LOW&&shiftState==LOW) {
+                cvAuxOutAltIndex[midiChannel] = 0;
+                if (cvAuxOutIndex[midiChannel] > 0){
+                    cvAuxOutIndex[midiChannel]--;
+                } else {
+                    cvAuxOutIndex[midiChannel] = 5;
                 }
+                MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],midiChannel);
             }
-
-            wholeNoteLastState = wholeNoteState;
-
-            if (thirdNoteState != thirdNoteLastState) {
-                if (thirdNoteState == LOW){
-                    if (euclideanCounter[midiChannel] > 0){
-                        euclideanCounter[midiChannel]--;
-                    } else {
-                        euclideanCounter[midiChannel] = 32;
-                    }
-                        MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
-                        digitalWrite(tensAnode, LOW);
-
-                    if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
-                        mcpArray[2].digitalWrite(tensDP, LOW);
-                    } else {
-                        mcpArray[2].digitalWrite(tensDP, HIGH);
-                    }
-                    for (int b=0; b < 7; b++) {
-                        mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[midiChannel]]%10][b]);
-                    }
+            if (thirdNoteState == LOW&&shiftState==HIGH) {
+                cvAuxOutIndex[midiChannel] = 0;
+                if (cvAuxOutAltIndex[midiChannel] > 0){
+                    cvAuxOutAltIndex[midiChannel]--;
+                } else {
+                    cvAuxOutAltIndex[midiChannel] = 6;
                 }
+                MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],midiChannel);
             }
-
-            thirdNoteLastState = thirdNoteState;
-
         }
     }
+    wholeNoteLastState = wholeNoteState;
+    thirdNoteLastState = thirdNoteState;
+    // end of whole note third note if statements
 
     //Tie:
     if (tieState != tieLastState) {
-        if (tieState == LOW&&shiftState==HIGH) {
-            mcpArray[2].digitalWrite(tensDP, HIGH);
-            digitalWrite(tensAnode, LOW);
+        if(loopStates[midiChannel] == 1) {
+            if (tieState == LOW&&shiftState==HIGH) {
+                MIDI.sendControlChange(restChannel,127,midiChannel); // loom delete lastest note
+            }
+            if (tieState == LOW&&shiftState==LOW){
+                MIDI.sendControlChange(tieChannel,127,midiChannel); // loom delete oldest note
+            }
+        } else {
+            if (tieState == LOW&&shiftState==HIGH) {
+                mcpArray[2].digitalWrite(tensDP, HIGH);
+                digitalWrite(tensAnode, LOW);
 
-            for (int f=0; f < 7; f++) {
-                mcpArray[2].digitalWrite(tens[f], letter_array[14][f]);
+                for (int f=0; f < 7; f++) {
+                    mcpArray[2].digitalWrite(tens[f], letter_array[14][f]);
+                }
+
+                MIDI.sendControlChange(tieChannel,127,midiChannel);
             }
 
-            MIDI.sendControlChange(tieChannel,127,midiChannel);
-        }
-
-        //clock div selection. every combo press advances clock Div array // also adjusts gate length automatically as defined in setup
-        if (tieState == LOW&&shiftState==LOW){
-            MIDI.sendControlChange(restChannel,127,midiChannel); // CC113, 127 Velocity, Channel 1
+            //clock div selection. every combo press advances clock Div array // also adjusts gate length automatically as defined in setup
+            if (tieState == LOW&&shiftState==LOW){
+                MIDI.sendControlChange(restChannel,127,midiChannel); // CC113, 127 Velocity, Channel 1
+            }
         }
     }
 
@@ -890,9 +959,8 @@ void loop() {
         if (restState == LOW&&shiftState==LOW){
             if (clockCounter < clockNums-1){
                 clockCounter++;
-            } else {
-                clockCounter = 0;
             }
+
             MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
             MIDI.sendControlChange(103,gateLengthVal[clockCounter],midiChannel);
 
@@ -932,7 +1000,7 @@ void loop() {
             if (clockCounter > 0){
                 clockCounter--;
             } else {
-                clockCounter = 9;
+                clockCounter = 0;
             }
 
             MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
@@ -954,8 +1022,8 @@ void loop() {
 
     if (oscMapped != oscLastMapped && shiftState==LOW){
         //loom if lower then toggle osc mode and shift
-        if (oscMapped > 8) {
-            MIDI.sendControlChange(71,round((oscMapped - 8)*1.06),midiChannel);
+        if (oscMapped > 5) {
+            MIDI.sendControlChange(71,map(oscMapped, 6, 128, modelStart[modelIndex[midiChannel]], modelEnd[modelIndex[midiChannel]]),midiChannel);
             if (oscMode[midiChannel] == 0) {
                 oscMode[midiChannel] = 1;
                 if (oscEnv[midiChannel] == 0) {
@@ -974,6 +1042,7 @@ void loop() {
         if (oscMode[midiChannel] == 1) {
             MIDI.sendControlChange(82,oscMapped,midiChannel);
         } else {
+            //lfo shape
             MIDI.sendControlChange(95,oscMapped,midiChannel);
         }  
         spinningShape(oscMapped/8);
@@ -1011,7 +1080,7 @@ void loop() {
             arpLedFix = HIGH;
 
             if(ccArp > 25) {
-                if(arpStates[midiChannel]==0){
+                if(arpStates[midiChannel]==0 && stepStates[midiChannel] == 0){
                     arpStates[midiChannel] = 1;
                     MIDI.sendControlChange(114,60,midiChannel);
 
@@ -1022,16 +1091,23 @@ void loop() {
                             MIDI.sendControlChange(107,0,midiChannel);
                         } else {
                             eucStates[midiChannel] = 1;
+                            MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                         }
                     }
+                } else if (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 0) {
+                    eucStates[midiChannel] = 1;
+                    MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                 }
             } else {
-                if(arpStates[midiChannel]==1){
+                if(arpStates[midiChannel]==1 && stepStates[midiChannel] == 0){
                     arpStates[midiChannel] = 0;
 
                     if(loopStates[midiChannel]==0 && stepStates[midiChannel]==0){
                         MIDI.sendControlChange(114,0,midiChannel);
                     }
+                } else if (arpStates[midiChannel]==0 && stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1) {
+                    MIDI.sendControlChange(107,0,midiChannel);
+                    eucStates[midiChannel] = 0;
                 }
             }
         }
@@ -1059,6 +1135,21 @@ void loop() {
                 //different scaling for hold pedal mode makes 0 not off but sustain
                 int holdMap = map(cc[z], 0, 127, 20, 127);
                 MIDI.sendControlChange(shift_cc[z],holdMap,midiChannel);
+
+            } else if (shift_cc[z] == 25 && (loopStates[midiChannel] == 1 || arpStates[midiChannel] == 1 || stepStates[midiChannel] == 1)) {
+                //IF Loop / step / arp then change fine tune to clock division
+                MIDI.sendControlChange(102,cc[z],midiChannel);
+            } else if(shift_cc[z] == 27 && (loopStates[midiChannel] == 1 || arpStates[midiChannel] == 1 || stepStates[midiChannel] == 1 )) {
+                //IF Loop / step / arp then change fine tune to gate length
+                MIDI.sendControlChange(103,cc[z],midiChannel);
+
+            } else if (shift_cc[z] == 25 && (oscMode[midiChannel] == 1)) {
+                //IF OSC ON this changes LFO MOD
+                MIDI.sendControlChange(83,cc[z],midiChannel);
+            } else if(shift_cc[z] == 27 && (oscMode[midiChannel] == 1 )) {
+                //IF OSC ON this changes ENV MOD
+                MIDI.sendControlChange(90,cc[z],midiChannel);
+
             } else if(shift_cc[z] == 77 || shift_cc[z] == 78 || shift_cc[z] == 79 || shift_cc[z] == 80) {
                 //This changes cv aux out to envelope if changing evelope and not having a oscillator selected
                 if(oscMode[midiChannel] == 0 && cvAuxOutIndex[midiChannel] != 5) {
@@ -1074,21 +1165,43 @@ void loop() {
                 spinningShape(cc[z]/8);
             }
         } else {
-            if(z == 0) {
+            if(loopStates[midiChannel] == 1 && midi_cc[z] == 105) {
+                //change DIR to phase for loopmode
+                MIDI.sendControlChange(115,cc[z],midiChannel);
+            } else if(loopStates[midiChannel] == 1 && midi_cc[z] == 106) {
+                //change PAT to length for loopmode
+                MIDI.sendControlChange(84,cc[z],midiChannel);
+            
+            } else if (midi_cc[z] == 105 && arpStates[midiChannel] != 1) {
+                //IF not manual and no osc then non-shift to shift cc
+                MIDI.sendControlChange(25,cc[z],midiChannel);
+            } else if(midi_cc[z] == 106 && arpStates[midiChannel] != 1 && eucStates[midiChannel] != 1) {
+                //IF not manual an no osc then non-shift to shift cc
+                MIDI.sendControlChange(27,cc[z],midiChannel);
+
+            } else if(midi_cc[z] == 5 && strummStates[midiChannel] == 1) {
+                // block portamento in strumm mode because it screws the tunning of the striked notes
+            } else if(z == 0) {
                 if(cc[z] > 25) {
                     MIDI.sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
+                    if(stepStates[midiChannel] == 1) {
+                        eucStates[midiChannel] = 1;
+                    }
                 }
             } else if (z == 2){ // if cc2 is "pattern" change cc2 to euclidean fill and cc3 to euclidean rotate
-                if(eucStates[midiChannel]==1) {
+                if((eucStates[midiChannel] == 1  && arpStates[midiChannel] == 1) || (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1)) {
                     MIDI.sendControlChange(108,cc[z],midiChannel);
                 } else {
                     MIDI.sendControlChange(106,cc[z],midiChannel);
                 }
             } else if (z == 3){
-                if(eucStates[midiChannel]==1) {
+                //74 is hold pedal? IDEA can we find any other reason for non shift pot?
+                // hold pedal mode is a shift thing to me don't you say?
+                if((eucStates[midiChannel] == 1 && arpStates[midiChannel] == 1) || (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1)) {
                     MIDI.sendControlChange(109,cc[z],midiChannel);
                 } else {
-                    MIDI.sendControlChange(19,cc[z],midiChannel);
+                    int holdMap = map(cc[z], 0, 127, 20, 127);
+                    MIDI.sendControlChange(shift_cc[z],holdMap,midiChannel);
                 }
             } else {
                 MIDI.sendControlChange(midi_cc[z],cc[z],midiChannel);
@@ -1167,6 +1280,9 @@ void loop() {
             mcpArray[1].digitalWrite(arpLed, LOW);
             mcpArray[2].digitalWrite(euclidean, HIGH);
         }
+    } else if (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1){
+            mcpArray[1].digitalWrite(arpLed, LOW);
+            mcpArray[2].digitalWrite(euclidean, ((millis() + 200) / blinkyInterval ) % 2);
     } else {
         if (strummStates[midiChannel]==0) {
             mcpArray[1].digitalWrite(arpLed, LOW);
@@ -1197,43 +1313,21 @@ void loop() {
                 MIDI.sendControlChange(111,127,midiChannel); // loom delete recording
             }
         }
-    } else if (oscMode[midiChannel] == 0) {
-        // if not recording and not in loop or step mode change aux out
-        if (extraState != extraLastState) {
-            if (extraState == LOW&&shiftState==HIGH) {
-                cvAuxOutAltIndex[midiChannel] = 0;
-                if (cvAuxOutIndex[midiChannel] < 5){
-                    cvAuxOutIndex[midiChannel]++;
-                } else {
-                    cvAuxOutIndex[midiChannel] = 0;
-                }
-                MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],midiChannel);
-            }
-            if (extraState == LOW&&shiftState==LOW) {
-                cvAuxOutIndex[midiChannel] = 0;
-                if (cvAuxOutAltIndex[midiChannel] < 6){
-                    cvAuxOutAltIndex[midiChannel]++;
-                } else {
-                    cvAuxOutAltIndex[midiChannel] = 0;
-                }
-                MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],midiChannel);
-            }
-        }
     } else {
+        //NOTE priority
         if (extraState != extraLastState) {
-            if (extraState == LOW && oscMapped > 18) {
-                if(oscEnv[midiChannel] == 0) {
-                    oscEnv[midiChannel] = 1;
-                    MIDI.sendControlChange(70,127,midiChannel);
-                } else {
-                    oscEnv[midiChannel] = 0;
-                    MIDI.sendControlChange(70,70,midiChannel);
+            if (extraState == LOW && shiftState==HIGH) {
+                notePriorityVal[midiChannel] = notePriorityVal[midiChannel] + 32;
+                if(notePriorityVal[0] > 127) {
+                    notePriorityVal[0] = 0;
                 }
+                MIDI.sendControlChange(19,notePriorityVal[midiChannel],midiChannel);
+            }
+            if (extraState == LOW && shiftState==LOW) { //always reset to default (LOWEST)
+                notePriorityVal[midiChannel] = 32;
+                MIDI.sendControlChange(19,notePriorityVal[midiChannel],midiChannel);
             }
         }
-        //TODO can shift extra do something when you have a osc?
-        //Idea is to switch shift DIR from lfo to env modulation and back
-        //Other idea is to have lfo and env when you are in osc mode on DIR and PAT pots
     }
     extraLastState = extraState;
 
