@@ -1,8 +1,11 @@
-// Eurorack 1U Midi Keyboard & Controller for Mutable Instruments Yarns
-// by Ithai Benjamin v2.4_2 January 2018
+// Eurorack 1U Midi Keyboard & Controller for Mutable Instruments Yarns with Loom
+// Made on Loom version 2.7.0
+
+// Base by Ithai Benjamin January 2018
 // Loom changes by Dylan December 2020
 // Loom oscilattor update April 2021
-// Joystick update January 2024
+// Needles 2 with joystick update January 2024
+// Set hasJoystick to false if you don't have a joystick.
 
 #include <MIDI.h>
 #include <Wire.h>
@@ -11,6 +14,7 @@ Adafruit_MCP23017 mcpArray[3]; // mcpArray[0], mcpArray[1], mcpArray[2],
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 #define MIDI_ENABLE 1
+boolean hasJoystick = true;
 
 // Octave leds
 char octaveLed_array[9][7] = {
@@ -505,35 +509,37 @@ void loop() {
 
     MidiButtonLastState = MidiButtonState;
 
-    xtraVal7=analogRead(xtraAnalog7);
-    if (xtraVal7 != xtraValState7){
-        if(fourTState==LOW) {
-            //Y axis to velocity
-            velocityJoystick = xtraVal7;
-        } else {
-            //Y axis to breath
-            MIDI.sendControlChange(2,map(xtraVal7,0,1020,127,0),2);
-        }
-    }
-    
-    xtraValState7 = xtraVal7;
-
-    if(oscState==LOW){
-        //X axis to pitch bend
-        int pitchBendValMapped = analogRead(xtraAnalog) - 512; // 0 at mid point
-        if ( abs(pitchBendValMapped - xtraValState) > 1)  { // have we moved enough to avoid analog jitter?
-            if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
-            MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
-            xtraValState = pitchBendValMapped;
+    if(hasJoystick == true) {
+        xtraVal7 = analogRead(xtraAnalog7);
+        if (xtraVal7 != xtraValState7){
+            if(fourTState==LOW) {
+                //Y axis to velocity
+                velocityJoystick = xtraVal7;
+            } else {
+                //Y axis to breath
+                MIDI.sendControlChange(2,map(xtraVal7,0,1020,127,0),2);
             }
         }
-    } else if(fourTState==LOW) {
-        //IDEA: what to do with X axis when Y controls velocity?
-    } else {
-        //X axis to breath
-        xtraVal=analogRead(xtraAnalog);
-        if (xtraVal != xtraValState){
-            MIDI.sendControlChange(2,map(xtraVal,0,1020,0,127),1);
+        
+        xtraValState7 = xtraVal7;
+
+        if(oscState == LOW){
+            //X axis to pitch bend
+            int pitchBendValMapped = analogRead(xtraAnalog) - 512; // 0 at mid point
+            if ( abs(pitchBendValMapped - xtraValState) > 1)  { // have we moved enough to avoid analog jitter?
+                if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
+                MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
+                xtraValState = pitchBendValMapped;
+                }
+            }
+        } else if(fourTState == LOW) {
+            //IDEA: what to do with X axis when Y controls velocity?
+        } else {
+            //X axis to breath
+            xtraVal=analogRead(xtraAnalog);
+            if (xtraVal != xtraValState){
+                MIDI.sendControlChange(2,map(xtraVal,0,1020,0,127),1);
+            }
         }
     }
     
