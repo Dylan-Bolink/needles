@@ -18,19 +18,21 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 const boolean hasJoystick = true;
 
 // Octave leds
-const char octaveLed_array[12][7] = {
-    {LOW,LOW,LOW,LOW,LOW,LOW,HIGH},   // G-2 // 7
-    {LOW,LOW,LOW,LOW,LOW,HIGH,HIGH},  // G-1 // 19
-    {LOW,LOW,LOW,LOW,LOW,HIGH,LOW},   // G0  // 31
-    {LOW,LOW,LOW,LOW,HIGH,LOW,LOW},   // G1  // 43
-    {LOW,LOW,LOW,HIGH,LOW,LOW,LOW},   // G2  // 55 - center default
-    {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},   // G3  // 67
-    {LOW,HIGH,LOW,LOW,LOW,LOW,LOW},   // G4  // 79
-    {HIGH,HIGH,LOW,LOW,LOW,LOW,LOW},  // G5  // 91
-    {HIGH,LOW,LOW,LOW,LOW,LOW,LOW},   // G6  // 103
-    {LOW,HIGH,HIGH,LOW,HIGH,HIGH,LOW},   // blink patern
-    {LOW,LOW,LOW,LOW,HIGH,HIGH,LOW},   // blink latest
-    {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},   // blink oldest
+const char octaveLed_array[14][7] = {
+    {LOW,LOW,LOW,LOW,LOW,LOW,HIGH},   // G-2 // 7 0 
+    {LOW,LOW,LOW,LOW,LOW,HIGH,HIGH},  // G-1 // 19 1
+    {LOW,LOW,LOW,LOW,LOW,HIGH,LOW},   // G0  // 31 2
+    {LOW,LOW,LOW,LOW,HIGH,LOW,LOW},   // G1  // 43 3
+    {LOW,LOW,LOW,HIGH,LOW,LOW,LOW},   // G2  // 55 - center default 4
+    {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},   // G3  // 67 5
+    {LOW,HIGH,LOW,LOW,LOW,LOW,LOW},   // G4  // 79 6
+    {HIGH,HIGH,LOW,LOW,LOW,LOW,LOW},  // G5  // 91 7
+    {HIGH,LOW,LOW,LOW,LOW,LOW,LOW},   // G6  // 103 8
+    {LOW,LOW,LOW,LOW,HIGH,HIGH,LOW},   // blink latest 9
+    {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},   // blink oldest 10
+    {LOW,HIGH,HIGH,LOW,HIGH,HIGH,LOW}, // blink patern 11
+    {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW}, // blink patern 12
+    {LOW,LOW,LOW,LOW,LOW,LOW,LOW}, // all low 13
 };
 
 const byte octaveNote_array[9] = {103,91,79,67,55,43,31,19,7};
@@ -124,17 +126,19 @@ int eucOnRotate = 0;
 
 // clock division - using rest&slide+shift buttons
 const byte clockCCVal[10] = {15,26,36,48,58,68,80,90,100,112};
-const byte clockVal[10] = {2,3,4,6,8,2,6,2,3,4};  //{2,3,4,6,8,12,16,24,32,48};
+const byte clockVal[10] = {2,3,4,6,8,2,6,2,3,4};
 const int clockNums = 10;
 int clockCounter = 0;
 
 // gate length. changes automatically with clock division
-const byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5}; // {16,12,8,6,5,4,3,3,2,2}
+const byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5};
 
 // euclidean cc
-const byte euclideanCCVal[33] = {0,4,8,12,16,20,24,28,32,35,39,43,47,51,55,59,63,66,70,74,78,82,86,90,94,97,101,105,109,113,117,121,125};
-const byte euclideanVal[33] = {0,1,2,3,4,5,6,7,8,9,1,1,2,3,4,5,6,7,8,9,2,1,2,3,4,5,6,7,8,9,3,1,2};  // 0-32 steps length;
-const int euclideanNums = 33;
+
+// LOOM only has 0-31 EC length
+
+const byte euclideanCCVal[32] = {0,4,8,12,16,20,25,29,33,37,41,45,49,53,57,61,66,70,74,78,82,86,90,94,98,102,107,111,115,119,123,127};
+const byte euclideanVal[32] = {0,1,2,3,4,5,6,7,8,9,1,1,2,3,4,5,6,7,8,9,2,1,2,3,4,5,6,7,8,9,3,1};  // 0-31 steps length;
 int euclideanCounter[8] = { 0,0,0,0,0,0,0,0 };
 
 // 4051 Mux for CC Pots:
@@ -267,7 +271,7 @@ int cvAuxOutAltIndex[8] = { 0,0,0,0,0,0,0,0 };
 const byte cvAuxOutAlt[7] = {77,86,94,103,111,118,127};
 int notePriorityVal[8] = { 0,0,0,0,0,0,0,0 };
 
-int isRecording = 0;
+int isRecording = -1;
 int arpLedFix;
 int holdCheck = 0;
 
@@ -299,9 +303,21 @@ int xtraValY = 0;
 int xtraValStateY = 0;
 
 // Important setting flash
-bool isBlinking = false;
+boolean isBlinking = false;
 unsigned long importantSettingStartTime;
-const unsigned long importantBlinkDuration = 150; // milliseconds
+unsigned long importantBlinkDuration = 1000; // milliseconds
+const int animationFrames[3][3] {
+    {11,12,4}, // centered
+    {10,5,4}, // left swipe
+    {9,3,4} // right swipe
+};
+const int animationFrameTimes[2][4] {
+    {250,400,500,750}, // fast
+    {1050,1200,1400,1600}, // slow
+};
+int animationSpeed = 0;
+int animationType = 0;
+boolean animationBlink = false;
 
 // Keyboard on mcp0+mcp1 pins:
 char notes[18] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};   //pin setup for 18 buttons (mcp1&2)
@@ -311,8 +327,10 @@ boolean notesPressed[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes p
 const int noteCount = 18;
 
 //Loom strumm keyboard
+//old value 4 see if this crashes JF less
+//Change these values if you have troubles with strumm
 const int noteOnDelay = 4; // Delay before a note is turned on, in milliseconds
-const int noteOffDelay = 4; // Delay before a note is turned off, in milliseconds
+const int noteOffDelay = 3; // Delay before a note is turned off, in milliseconds
 int lastNoteStriked = -1; // Last note turned on
 
 // Octave keys
@@ -482,6 +500,8 @@ void loop() {
 
                 // Center portamento because it wont work well with strumm.
                 MIDI.sendControlChange(5,64,midiChannel);
+                //Center lfo rate.
+                MIDI.sendControlChange(23,64,midiChannel);
 
                 // turn off arp because it's useless with strumming.
                 if (arpStates[midiChannel]==1){
@@ -496,21 +516,23 @@ void loop() {
 
     if(hasJoystick == true) {
         xtraValY = analogRead(xtraAnalogY);
-        if (xtraValY != xtraValStateY){
+
+        if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
+        // if (xtraValY != xtraValStateY){
             if(velocityJoystickState==LOW) {
                 //Y axis to velocity
                 velocityJoystick = xtraValY;
             } else {
                 //Y axis to breath
                 MIDI.sendControlChange(2,map(xtraValY,0,1020,127,0),2);
+                xtraValStateY = xtraValY;
             }
         }
         
-        xtraValStateY = xtraValY;
-
+        xtraValX = analogRead(xtraAnalogX);
         if(pitchBendState == LOW){
             //X axis to pitch bend
-            int pitchBendValMapped = analogRead(xtraAnalogX) - 512; // 0 at mid point
+            int pitchBendValMapped = xtraValX - 512; // 0 at mid point
             if ( abs(pitchBendValMapped - xtraValStateX) > 1)  { // have we moved enough to avoid analog jitter?
                 if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
                 MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
@@ -521,9 +543,9 @@ void loop() {
             //IDEA: what to do with X axis when Y controls velocity?
         } else {
             //X axis to breath
-            xtraValX = analogRead(xtraAnalogX);
-            if (xtraValX != xtraValStateX){
+            if ( abs(xtraValX - xtraValStateX) > 1)  { 
                 MIDI.sendControlChange(2,map(xtraValX,0,1020,0,127),1);
+                xtraValStateX = xtraValX;
             }
         }
     }
@@ -531,12 +553,12 @@ void loop() {
     //Start octave switch
     //limit keyboard from G-2 to C8
     keysLast = constrain(keysLast,7,103);
-    for(int i=0;i<2;i++){          //loop for modifier keys
-        changeButtonLast[i]=changeButton[i];        //update modifier key state
-        changeButton[i]=mcpArray[1].digitalRead(changePins[i]);     //read state of modifier keys
+    for(int i = 0; i < 2; i++){  //loop for modifier keys
+        changeButtonLast[i]=changeButton[i]; //update modifier key state
+        changeButton[i]=mcpArray[1].digitalRead(changePins[i]); //read state of modifier keys
 
         //reset octaves - if modifier buttons 1 and 2 are pressed together simultaneously
-        if(changeButton[0]&&changeButton[1]==HIGH && shiftState==HIGH){
+        if(changeButton[0] && changeButton[1] == HIGH && shiftState == HIGH){
             keysLast=keysBase; //revert keyboard base to C3
             // light up default center octave led
             for (int n=0; n < 7; n++){
@@ -545,26 +567,21 @@ void loop() {
             MIDI.sendControlChange(123,0,midiChannel);
         }
         //change octaves - if modifier buttons 1 or 2 are pressed
-        if(changeButton[i]==HIGH&&changeButtonLast[i]!=changeButton[i] && shiftState==HIGH){
-            //TODO hard fix strumm notes off
+        if(changeButton[i]==HIGH && changeButtonLast[i] != changeButton[i] && shiftState == HIGH){
             if(strummStates[midiChannel] == 1) {
-                for(char n=0;n<noteCount;n++){
-                    // noteOn[n]=mcpArray[(notes[n]>>4)].digitalRead(notes[n] & 0x0F);
+                for(char n = 0; n < noteCount; n++){
                     //loom notes pressed
                     MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
                     notesPressed[n]=0;
                     lastNoteStriked = -1;
-                    // noteLast[n]=noteOn[n];
                 }
             }
-            for(char n=0;n<noteCount;n++){
-                // noteOn[n]=mcpArray[(notes[n]>>4)].digitalRead(notes[n] & 0x0F);
+            for(char n = 0; n < noteCount; n++){
                 //loom notes pressed
                 if(notesPressed[n]==1){
                     MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
                     notesPressed[n]=0;
                 }
-                // noteLast[n]=noteOn[n];
             }
             //change keyboard base up or down in octaves
             changekeys(octaveChanges[i],keysLast);
@@ -582,7 +599,7 @@ void loop() {
     //end octave switch
 
     //Loom octave seq switcher
-    if(changeButton[0]==HIGH &&changeButtonLast[0]!=changeButton[0] && shiftState==LOW){
+    if(changeButton[0] == HIGH &&changeButtonLast[0] != changeButton[0] && shiftState == LOW){
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         if(stepStates[midiChannel]==1) {
@@ -606,7 +623,7 @@ void loop() {
         }
     }
 
-    if(changeButton[1]==HIGH &&changeButtonLast[1]!=changeButton[1] && shiftState==LOW){
+    if(changeButton[1] == HIGH && changeButtonLast[1] != changeButton[1] && shiftState == LOW){
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         if(loopStates[midiChannel] == 1) {
@@ -636,11 +653,11 @@ void loop() {
         mcpArray[2].digitalWrite(euclidean, (millis() / (blinkyInterval/2)) % 2);
     }
 
-    if(loopStates[midiChannel] == 1) {
+    if(loopStates[midiChannel] == 1 && isBlinking == false) {
         mcpArray[1].digitalWrite(15, (millis() / blinkyInterval) % 2);
     }
 
-    if(stepStates[midiChannel] == 1) {
+    if(stepStates[midiChannel] == 1  && isBlinking == false) {
         mcpArray[1].digitalWrite(10, (millis() / blinkyInterval) % 2);
     }
 
@@ -668,7 +685,7 @@ void loop() {
         noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
 
         if(strummStates[midiChannel] == 1) {
-            // New strumm version TODO
+            // New strumm version
              if(noteOn[n] == HIGH && noteLast[n] != noteOn[n]){
                 if(lastNoteStriked!=-1){
                     MIDI.sendNoteOff(keysLast+lastNoteStriked,velocityMap,midiChannel);
@@ -726,9 +743,9 @@ void loop() {
     pitchBendState = digitalRead(pitchBendPin);
     velocityJoystickState = digitalRead(velocityJoystickPin);
 
-    if (stepStates[midiChannel] == 1 && isRecording == 1){ // if euclidean is off then use these buttons to step 3 or 7 - bigger rest and tie steps
+    if (stepStates[midiChannel] == 1 && isRecording == midiChannel){ // if euclidean is off then use these buttons to step 3 or 7 - bigger rest and tie steps
         if (wholeNoteState != wholeNoteLastState) {
-            startBlinking(9); // blink because steps are added
+            shortBlink(0); // blink because steps are added
             if (wholeNoteState == LOW&&shiftState == HIGH) {
                 MIDI.sendControlChange(tieChannel,127,midiChannel);
                 MIDI.sendControlChange(tieChannel,127,midiChannel);
@@ -756,7 +773,7 @@ void loop() {
         }
 
         if (thirdNoteState != thirdNoteLastState) {
-            startBlinking(9); // blink because steps are added
+            shortBlink(0); // blink because steps are added
             if (thirdNoteState == LOW && shiftState == HIGH) {
                 MIDI.sendControlChange(tieChannel,127,midiChannel);
                 MIDI.sendControlChange(tieChannel,127,midiChannel);
@@ -792,18 +809,19 @@ void loop() {
 
             }
         }
-    } else if (eucStates[midiChannel] == 1 && (arpStates[midiChannel] == 1 || stepStates[midiChannel] == 1) ){ // if Euclidean is ON use the two buttons for plus/minus euclidean length, up to 32 steps
+    } else if (eucStates[midiChannel] == 1 && (arpStates[midiChannel] == 1 || stepStates[midiChannel] == 1)){ // if Euclidean is ON use the two buttons for plus/minus euclidean length, up to 32 steps
         if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
-            if (euclideanCounter[midiChannel] < euclideanNums-1){
+            if (euclideanCounter[midiChannel] < 31){
                 euclideanCounter[midiChannel]++;
+                stopBlinking();
             } else {
-                euclideanCounter[midiChannel] = 0;
-                startBlinking(9); // blink because euc steps is on 0
+                // euclideanCounter[midiChannel] = 0;
+                shortBlink(0); // blink because euc steps is on 32
             }
 
             MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
             digitalWrite(tensAnode, LOW);
-            if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
+            if (euclideanCounter[midiChannel] == 10 || euclideanCounter[midiChannel] == 20 || euclideanCounter[midiChannel] == 30){
                 mcpArray[2].digitalWrite(tensDP, LOW);
             } else {
                 mcpArray[2].digitalWrite(tensDP, HIGH);
@@ -817,12 +835,13 @@ void loop() {
             if (euclideanCounter[midiChannel] > 0){
                 euclideanCounter[midiChannel]--;
             } else {
-                euclideanCounter[midiChannel] = 32;
+                shortBlink(0); // blink because euc steps is on 0
+                // euclideanCounter[midiChannel] = 32;
             }
                 MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                 digitalWrite(tensAnode, LOW);
 
-            if (euclideanCounter[midiChannel]==10||euclideanCounter[midiChannel]==20||euclideanCounter[midiChannel]==30){
+            if (euclideanCounter[midiChannel] == 10 || euclideanCounter[midiChannel] == 20 || euclideanCounter[midiChannel] == 30){
                 mcpArray[2].digitalWrite(tensDP, LOW);
             } else {
                 mcpArray[2].digitalWrite(tensDP, HIGH);
@@ -848,7 +867,7 @@ void loop() {
             modelIndex[midiChannel]++;
             if(modelIndex[midiChannel] > 2) {
                 modelIndex[midiChannel] = 0;
-                startBlinking(9); // blink becuase model is on 0 noise
+                shortBlink(0); // blink becuase model is on 0 noise
             }
             //7 changes model
             MIDI.sendControlChange(71,modelStart[modelIndex[midiChannel]],midiChannel);
@@ -901,11 +920,13 @@ void loop() {
 
         if((thirdNoteState != thirdNoteLastState && thirdNoteState == LOW && shiftState == LOW) || (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW && shiftState == LOW)) {
             if(midiChannel == 2 && cvAuxOutIndex[midiChannel] == 1 && velocityJoystickState == HIGH) {
-                startBlinking(9);  // Blink because breath is on joystick and cv out is on breath
+                shortBlink(0);  // Blink because breath is on joystick and cv out is on breath
             } else if (midiChannel == 1 && cvAuxOutIndex[midiChannel] == 1 && velocityJoystickState == HIGH && pitchBendState == HIGH) {
-                startBlinking(9);  // Blink because breath is on joystick and cv out is on breath
+                shortBlink(0);  // Blink because breath is on joystick and cv out is on breath
             } else if (cvAuxOutIndex[midiChannel] == 0 && velocityJoystickState == LOW) {
-                startBlinking(9);  // Blink because velocity is on joystick and cv out is on velocity
+                shortBlink(0);  // Blink because velocity is on joystick and cv out is on velocity
+            } else {
+                stopBlinking();
             }
         }
     }
@@ -918,11 +939,11 @@ void loop() {
         if(loopStates[midiChannel] == 1) {
             if (tieState == LOW && shiftState == HIGH) {
                 MIDI.sendControlChange(restChannel,127,midiChannel); // loom delete lastest note
-                startBlinking(10); // blink because latest delete
+                shortBlink(2); // blink because latest delete
             }
             if (tieState == LOW && shiftState == LOW){
                 MIDI.sendControlChange(tieChannel,127,midiChannel); // loom delete oldest note
-                startBlinking(11); // blink because oldest delete
+                shortBlink(1); // blink because oldest delete
             }
         } else {
             if (tieState == LOW && shiftState == HIGH) {
@@ -963,10 +984,11 @@ void loop() {
 
         //clock div selection. every combo press advances clock Div array // also adjusts gate length message
         if (restState == LOW && shiftState == LOW){
+            stopBlinking();
             if (clockCounter < clockNums-1){
                 clockCounter++;
             } else {
-                startBlinking(9); // Blink because clock is maxed out
+                shortBlink(0); // Blink because clock is maxed out
             }
 
             MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
@@ -1005,11 +1027,12 @@ void loop() {
 
         //clock div selection. every combo press advances clock Div array // also adjusts gate length message
         if (slideState == LOW && shiftState == LOW){
+            stopBlinking();
             if (clockCounter > 0){
                 clockCounter--;
             } else {
                 clockCounter = 0;
-                startBlinking(9); // blink because clock is on 0
+                shortBlink(0); // blink because clock is on 0
             }
 
             MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
@@ -1032,8 +1055,10 @@ void loop() {
     if (sliderMapped != sliderLastMapped && shiftState == LOW){
         //loom if lower then toggle osc mode and shift
         if (sliderMapped > 5) {
-            if (sliderMapped < 8) {
-                startBlinking(9);  // Blink because first osc type
+            if (sliderMapped < 10) {
+                longBlink(0);  // Blink because first osc type
+            } else {
+                stopBlinking();
             }
             MIDI.sendControlChange(71,map(sliderMapped, 6, 128, modelStart[modelIndex[midiChannel]], modelEnd[modelIndex[midiChannel]]),midiChannel);
             if (oscMode[midiChannel] == 0) {
@@ -1048,6 +1073,7 @@ void loop() {
         } else {
             oscMode[midiChannel] = 0;
             MIDI.sendControlChange(70,0,midiChannel);
+            stopBlinking();
         }
         spinningShape(sliderMapped/8);
     } else if (sliderMapped != sliderLastMapped && shiftState == HIGH){
@@ -1086,10 +1112,6 @@ void loop() {
                 }
             }
 
-        // for arp led
-        // TODO: This works right?
-        // ccArp=cc[0];
-
         if (abs(cc[0] - lastpot[0]) >= potThreshold) {
             arpLedFix = HIGH;
 
@@ -1100,8 +1122,9 @@ void loop() {
 
                     // Change CC's pot function for Euclidean
                     if (shiftState == LOW) {
-                        if (eucStates[midiChannel]==1){
+                        if (eucStates[midiChannel] == 1){
                             eucStates[midiChannel] = 0;
+                            // euclidean steps to 0 to turn off euclidean
                             MIDI.sendControlChange(107,0,midiChannel);
                         } else {
                             eucStates[midiChannel] = 1;
@@ -1113,13 +1136,14 @@ void loop() {
                     MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                 }
             } else {
-                if(arpStates[midiChannel]==1 && stepStates[midiChannel] == 0){
+                if(arpStates[midiChannel] == 1 && stepStates[midiChannel] == 0){
                     arpStates[midiChannel] = 0;
 
-                    if(loopStates[midiChannel]==0 && stepStates[midiChannel]==0){
+                    if(loopStates[midiChannel] == 0 && stepStates[midiChannel] == 0){
                         MIDI.sendControlChange(114,0,midiChannel);
                     }
-                } else if (arpStates[midiChannel]==0 && stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1) {
+                } else if (arpStates[midiChannel] == 0 && stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1) {
+                    // euclidean steps to 0 to turn off euclidean
                     MIDI.sendControlChange(107,0,midiChannel);
                     eucStates[midiChannel] = 0;
                 }
@@ -1157,9 +1181,10 @@ void loop() {
             } else if(shift_cc[z] == 27 && (oscMode[midiChannel] == 1 )) {
                 //IF OSC ON this changes ENV MOD
                 MIDI.sendControlChange(90,cc[z],midiChannel);
-
-                if (cc[z] == 64) {
-                    startBlinking(9); // blink because env mod is centered
+                if (midi_cc[z] == 5 && cc[z] == 64) {
+                    longBlink(0); //blink because env mod is centered
+                } else {
+                    stopBlinking();
                 }
 
             } else if(shift_cc[z] == 77 || shift_cc[z] == 78 || shift_cc[z] == 79 || shift_cc[z] == 80) {
@@ -1173,7 +1198,9 @@ void loop() {
                 MIDI.sendControlChange(shift_cc[z],cc[z],midiChannel);
 
                 if(shift_cc[z] == 25 && cc[z] == 64) {
-                    startBlinking(9);  // Blink because fine tune is centered
+                    longBlink(0);  // Blink because fine tune is centered
+                } else {
+                    stopBlinking();
                 }
             }
 
@@ -1199,8 +1226,10 @@ void loop() {
             } else if (midi_cc[z] == 105 && arpStates[midiChannel] != 1) {
                 //IF not manual and no osc then non-shift to shift cc
                 MIDI.sendControlChange(25,cc[z],midiChannel);
-                if(cc[z] == 64) {
-                    startBlinking(9); //blink because fine tune is centered   
+                if( cc[z] == 64) {
+                    longBlink(0);  // Blink because fine tune is centered
+                } else {
+                    stopBlinking();
                 }
             } else if(midi_cc[z] == 106 && arpStates[midiChannel] != 1 && eucStates[midiChannel] != 1) {
                 //IF not manual an no osc then non-shift to shift cc
@@ -1208,6 +1237,10 @@ void loop() {
 
             } else if(midi_cc[z] == 5 && strummStates[midiChannel] == 1) {
                 // block portamento in strumm mode because it screws the tunning of the striked notes
+
+            } else if(midi_cc[z] == 23 && strummStates[midiChannel] == 1) {
+                // restrict vibrato speeds for stability reasons (JF crashing)
+                MIDI.sendControlChange(23,map(cc[z], 0, 127, 32, 95),midiChannel);
             } else if(z == 0) {
                 if(cc[z] > 25) {
                     MIDI.sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
@@ -1220,7 +1253,9 @@ void loop() {
             } else if(midi_cc[z] == 106 && arpStates[midiChannel] == 1){
                 MIDI.sendControlChange(midi_cc[z],cc[z],midiChannel);
                 if (cc[z] > 88 && cc[z] < 92) {
-                    startBlinking(9); //blink because P1 Pattern
+                    longBlink(0); //blink because P1 Pattern
+                } else {
+                    stopBlinking();
                 }
             } else if (z == 3){
                 //74 is hold pedal? IDEA can we find any other reason for non shift pot?
@@ -1234,7 +1269,9 @@ void loop() {
             } else {
                 MIDI.sendControlChange(midi_cc[z],cc[z],midiChannel);
                 if (midi_cc[z] == 5 && cc[z] == 64) {
-                    startBlinking(9); //blink because portamento is centered
+                    longBlink(0); //blink because portamento is centered
+                } else {
+                    stopBlinking();
                 }
             }
             
@@ -1287,28 +1324,28 @@ void loop() {
 
     //XTRA button functions
     // shutdown recording if a channel is still recording
-    if (isRecording > 0) {
+    if (isRecording > -1) {
         if (extraState != extraLastState) {
             if (extraState == LOW && shiftState == HIGH) {
                 MIDI.sendControlChange(110,0,isRecording); // loom recording off
-                isRecording = 0;
+                isRecording = -1;
             }
         }
         if (extraState == LOW && shiftState == LOW) {
             MIDI.sendControlChange(111,127,isRecording); // loom delete recording
-            startBlinking(9);  // Blink because delete recording
+            shortBlink(0);  // Blink because delete recording
         }
     } else if (stepStates[midiChannel] == 1 || loopStates[midiChannel] == 1) {
         if (extraState != extraLastState) {
             if (extraState == LOW && shiftState == HIGH) {
-                if(isRecording == 0) {
+                if(isRecording == -1) {
                     isRecording = midiChannel;
                     MIDI.sendControlChange(110,127,midiChannel); // loom recording on
                 }
             }
             if (extraState == LOW && shiftState == LOW) {
                 MIDI.sendControlChange(111,127,midiChannel); // loom delete recording
-                startBlinking(9); // Blink because delete recording
+                shortBlink(0); // Blink because delete recording
             }
         }
     } else {
@@ -1318,14 +1355,17 @@ void loop() {
                 notePriorityVal[midiChannel] = notePriorityVal[midiChannel] + 32;
                 if(notePriorityVal[midiChannel] > 127) {
                     notePriorityVal[midiChannel] = 0;
-                } else if(notePriorityVal[midiChannel] == 32) {
-                    startBlinking(9); // Blink because note priority is lowest
+                }
+                if(notePriorityVal[midiChannel] == 32) {
+                    shortBlink(0); // Blink because note priority is lowest
+                } else {
+                    stopBlinking();
                 }
                 MIDI.sendControlChange(19,notePriorityVal[midiChannel],midiChannel);
             }
             if (extraState == LOW && shiftState == LOW) { //always reset to default (LOWEST)
                 notePriorityVal[midiChannel] = 32;
-                startBlinking(9); // Blink because note priority is lowest
+                shortBlink(0); // Blink because note priority is lowest
                 MIDI.sendControlChange(19,notePriorityVal[midiChannel],midiChannel);
             }
 
@@ -1355,9 +1395,10 @@ void loop() {
         if (legatoState == LOW && shiftState == LOW) {
             if (responseStates[midiChannel] < 2){
                 responseStates[midiChannel]++;
+                stopBlinking();
             } else {
                 responseStates[midiChannel] = 0;
-                startBlinking(9); // Blink because response is lowest
+                shortBlink(0); // Blink because response is transpose
             }
             MIDI.sendControlChange(76,responseVal[responseStates[midiChannel]],midiChannel);
             transposeShape(responseStates[midiChannel]);
@@ -1404,8 +1445,14 @@ void loop() {
     }
     shiftLastState = shiftState;
 
-    //TODO how long should it blink?
-    if (isBlinking && millis() - importantSettingStartTime >= importantBlinkDuration) {
+
+    // int animationFrameTimes[2][4] {
+    //     {150,300,400,650}, // fast
+    //     {1050,1200,1400,1600}, // slow
+    // };
+    // int animationSpeed = 0;
+    
+    if (isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][3]) {
         isBlinking = false;
         // set octave leds back to current octave
         for (int j=0; j < 9; j++) {
@@ -1414,20 +1461,57 @@ void loop() {
                     mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[j][n]);
                 }
             }
+        } 
+    //alays end animation with short all off 13 == all of
+    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][2])) {
+        for (int n=0; n < 7; n++){
+            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[13][n]);
         }
-        
+
+    //frame 2
+    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][1]) ) {
+        for (int n=0; n < 7; n++){
+            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][2])][n]);
+        }
+    //frame 1
+    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][0])) {
+        for (int n=0; n < 7; n++){
+            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][1])][n]);
+        }
     }
 }
 //End void loop
 
-void startBlinking(int blinkNumber) {
+// animationType = selected animation
+// int animationFrames[3][3] {
+//     {11,12,4}, // centered
+//     {10,5,4}, // left swipe
+//     {9,3,4} // right swipe
+// };
+
+void longBlink(int blinkNumber) {
+    animationSpeed = 1; // 1 slow
+    blink(blinkNumber);
+}
+
+void shortBlink(int blinkNumber) {
+    animationSpeed = 0; // 0 fast
+    blink(blinkNumber);
+}
+
+void blink(int blinkNumber) {
     if (!isBlinking) {
+        animationType = blinkNumber;
         isBlinking = true;
         importantSettingStartTime = millis();
         for (int n=0; n < 7; n++){
-            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[blinkNumber][n]);
+            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[animationFrames[animationType][0]][n]);
         }
     }
+}
+
+void stopBlinking() {
+    importantSettingStartTime = 1400;
 }
 
 //SEGMENT FUNCTIONS
