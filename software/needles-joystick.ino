@@ -7,6 +7,7 @@
 // Needles 2 with joystick update January 2024
 
 // Set hasJoystick to false if you don't have a joystick.
+// Set numMidiChannels to desired number of MIDI channels. Max is 8.
 
 #include <MIDI.h>
 #include <Wire.h>
@@ -329,8 +330,8 @@ const int noteCount = 18;
 //Loom strumm keyboard
 //old value 4 see if this crashes JF less
 //Change these values if you have troubles with strumm
-const int noteOnDelay = 4; // Delay before a note is turned on, in milliseconds
-const int noteOffDelay = 3; // Delay before a note is turned off, in milliseconds
+const int noteOnDelay = 5; // Delay before a note is turned on, in milliseconds
+const int noteOffDelay = 4; // Delay before a note is turned off, in milliseconds
 int lastNoteStriked = -1; // Last note turned on
 
 // Octave keys
@@ -501,7 +502,7 @@ void loop() {
                 // Center portamento because it wont work well with strumm.
                 MIDI.sendControlChange(5,64,midiChannel);
                 //Center lfo rate.
-                MIDI.sendControlChange(23,64,midiChannel);
+                // MIDI.sendControlChange(23,64,midiChannel);
 
                 // turn off arp because it's useless with strumming.
                 if (arpStates[midiChannel]==1){
@@ -516,8 +517,8 @@ void loop() {
 
     if(hasJoystick == true) {
         xtraValY = analogRead(xtraAnalogY);
-
-        if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
+        // CHECK: what is better jitter control or no jitter control
+        // if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
         // if (xtraValY != xtraValStateY){
             if(velocityJoystickState==LOW) {
                 //Y axis to velocity
@@ -527,7 +528,7 @@ void loop() {
                 MIDI.sendControlChange(2,map(xtraValY,0,1020,127,0),2);
                 xtraValStateY = xtraValY;
             }
-        }
+        // }
         
         xtraValX = analogRead(xtraAnalogX);
         if(pitchBendState == LOW){
@@ -543,10 +544,10 @@ void loop() {
             //IDEA: what to do with X axis when Y controls velocity?
         } else {
             //X axis to breath
-            if ( abs(xtraValX - xtraValStateX) > 1)  { 
+            // if ( abs(xtraValX - xtraValStateX) > 1)  { 
                 MIDI.sendControlChange(2,map(xtraValX,0,1020,0,127),1);
                 xtraValStateX = xtraValX;
-            }
+            // }
         }
     }
     
@@ -1238,9 +1239,9 @@ void loop() {
             } else if(midi_cc[z] == 5 && strummStates[midiChannel] == 1) {
                 // block portamento in strumm mode because it screws the tunning of the striked notes
 
-            } else if(midi_cc[z] == 23 && strummStates[midiChannel] == 1) {
-                // restrict vibrato speeds for stability reasons (JF crashing)
-                MIDI.sendControlChange(23,map(cc[z], 0, 127, 32, 95),midiChannel);
+            // } else if(midi_cc[z] == 23 && strummStates[midiChannel] == 1) {
+            //     // restrict vibrato speeds for stability reasons (JF crashing)
+            //     MIDI.sendControlChange(23,map(cc[z], 0, 127, 32, 95),midiChannel);
             } else if(z == 0) {
                 if(cc[z] > 25) {
                     MIDI.sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
@@ -1345,6 +1346,15 @@ void loop() {
             }
             if (extraState == LOW && shiftState == LOW) {
                 MIDI.sendControlChange(111,127,midiChannel); // loom delete recording
+                shortBlink(0); // Blink because delete recording
+            }
+        }
+    } else if (strummStates[midiChannel] == 1) {
+        //Strumm panic shutdown all notes off
+        if (extraState != extraLastState) {
+            if (extraState == LOW) {
+                MIDI.sendControlChange(123,0,midiChannel);
+                lastNoteStriked = -1;
                 shortBlink(0); // Blink because delete recording
             }
         }
