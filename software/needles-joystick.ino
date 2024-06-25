@@ -1,5 +1,5 @@
 // Eurorack 1U Midi Keyboard & Controller for Mutable Instruments Yarns with Loom
-// Made on Loom version 2.7.0
+// Made on Loom version 2.7.1
 
 // Base by Ithai Benjamin January 2018
 // Loom changes by Dylan December 2020
@@ -188,7 +188,7 @@ int thirdNoteLastState = 0;
 int legatoState = 0;
 int legatoLastState = 0;
 int legatoCurrentState = HIGH;
-boolean legatoStates[8] = { 0,0,0,0,0,0,0,0 };
+int legatoStates[8] = { 0,0,0,0,0,0,0,0 };
 
 const byte responseVal[3] = {40,80,120};
 int responseStates[8] = { 0,0,0,0,0,0,0,0 };
@@ -238,6 +238,8 @@ boolean eucStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean holdStates[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscMode[8] = { 0,0,0,0,0,0,0,0 };
 boolean oscEnv[8] = { 0,0,0,0,0,0,0,0 };
+boolean hasRecording[8] = { 0,0,0,0,0,0,0,0 };
+int lastPortamento[8] = { 0,0,0,0,0,0,0,0 };
 
 // 4 noise
 // 21 classic
@@ -494,15 +496,18 @@ void loop() {
                 strummStates[midiChannel] = 0;
                 mcpArray[1].digitalWrite(arpLed, 0);
                 mcpArray[2].digitalWrite(euclidean, 0);
+
+                // reset portamento state from before strumm
+                if(lastPortamento[midiChannel] > 0) {
+                    MIDI.sendControlChange(5,lastPortamento[midiChannel],midiChannel);
+                }
             } else {
                 mcpArray[1].digitalWrite(15, 0);
                 mcpArray[1].digitalWrite(10, 0);
                 strummStates[midiChannel] = 1;
 
                 // Center portamento because it wont work well with strumm.
-                MIDI.sendControlChange(5,64,midiChannel);
-                //Center lfo rate.
-                // MIDI.sendControlChange(23,64,midiChannel);
+                MIDI.sendControlChange(5,0,midiChannel);
 
                 // turn off arp because it's useless with strumming.
                 if (arpStates[midiChannel]==1){
@@ -814,13 +819,12 @@ void loop() {
         if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
             if (euclideanCounter[midiChannel] < 31){
                 euclideanCounter[midiChannel]++;
+                MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                 stopBlinking();
             } else {
-                // euclideanCounter[midiChannel] = 0;
                 shortBlink(0); // blink because euc steps is on 32
             }
 
-            MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
             digitalWrite(tensAnode, LOW);
             if (euclideanCounter[midiChannel] == 10 || euclideanCounter[midiChannel] == 20 || euclideanCounter[midiChannel] == 30){
                 mcpArray[2].digitalWrite(tensDP, LOW);
@@ -835,12 +839,12 @@ void loop() {
         if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
             if (euclideanCounter[midiChannel] > 0){
                 euclideanCounter[midiChannel]--;
+                MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
             } else {
                 shortBlink(0); // blink because euc steps is on 0
-                // euclideanCounter[midiChannel] = 32;
             }
-                MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
-                digitalWrite(tensAnode, LOW);
+
+            digitalWrite(tensAnode, LOW);
 
             if (euclideanCounter[midiChannel] == 10 || euclideanCounter[midiChannel] == 20 || euclideanCounter[midiChannel] == 30){
                 mcpArray[2].digitalWrite(tensDP, LOW);
@@ -939,8 +943,9 @@ void loop() {
     if (tieState != tieLastState) {
         if(loopStates[midiChannel] == 1) {
             if (tieState == LOW && shiftState == HIGH) {
-                MIDI.sendControlChange(restChannel,127,midiChannel); // loom delete lastest note
-                shortBlink(2); // blink because latest delete
+                //undo last note
+                MIDI.sendControlChange(restChannel,127,midiChannel); // loom delete newest note
+                shortBlink(2); // blink because newest delete
             }
             if (tieState == LOW && shiftState == LOW){
                 MIDI.sendControlChange(tieChannel,127,midiChannel); // loom delete oldest note
@@ -1132,6 +1137,12 @@ void loop() {
                             MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
                         }
                     }
+
+                    // reset portamento state from before strumm
+                    if(lastPortamento[midiChannel] > 0) {
+                        MIDI.sendControlChange(5,lastPortamento[midiChannel],midiChannel);
+                        lastPortamento[midiChannel] = 0;
+                    }
                 } else if (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 0) {
                     eucStates[midiChannel] = 1;
                     MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[midiChannel]],midiChannel);
@@ -1227,21 +1238,20 @@ void loop() {
             } else if (midi_cc[z] == 105 && arpStates[midiChannel] != 1) {
                 //IF not manual and no osc then non-shift to shift cc
                 MIDI.sendControlChange(25,cc[z],midiChannel);
+                
                 if( cc[z] == 64) {
                     longBlink(0);  // Blink because fine tune is centered
                 } else {
                     stopBlinking();
                 }
+                
             } else if(midi_cc[z] == 106 && arpStates[midiChannel] != 1 && eucStates[midiChannel] != 1) {
                 //IF not manual an no osc then non-shift to shift cc
                 MIDI.sendControlChange(27,cc[z],midiChannel);
 
             } else if(midi_cc[z] == 5 && strummStates[midiChannel] == 1) {
                 // block portamento in strumm mode because it screws the tunning of the striked notes
-
-            // } else if(midi_cc[z] == 23 && strummStates[midiChannel] == 1) {
-            //     // restrict vibrato speeds for stability reasons (JF crashing)
-            //     MIDI.sendControlChange(23,map(cc[z], 0, 127, 32, 95),midiChannel);
+                // TODO check if it can control something else
             } else if(z == 0) {
                 if(cc[z] > 25) {
                     MIDI.sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
@@ -1253,13 +1263,13 @@ void loop() {
                     MIDI.sendControlChange(108,cc[z],midiChannel);
             } else if(midi_cc[z] == 106 && arpStates[midiChannel] == 1){
                 MIDI.sendControlChange(midi_cc[z],cc[z],midiChannel);
-                if (cc[z] > 88 && cc[z] < 92) {
+                if ((cc[z] > 88 && cc[z] < 92) && hasRecording[midiChannel] == 1) {
                     longBlink(0); //blink because P1 Pattern
                 } else {
                     stopBlinking();
                 }
             } else if (z == 3){
-                //74 is hold pedal? IDEA can we find any other reason for non shift pot?
+                // 74 is hold pedal? IDEA can we find any other reason for non shift pot?
                 // hold pedal mode is a shift thing to me don't you say?
                 if((eucStates[midiChannel] == 1 && arpStates[midiChannel] == 1) || (stepStates[midiChannel] == 1 && eucStates[midiChannel] == 1)) {
                     MIDI.sendControlChange(109,cc[z],midiChannel);
@@ -1273,6 +1283,9 @@ void loop() {
                     longBlink(0); //blink because portamento is centered
                 } else {
                     stopBlinking();
+                }
+                if (midi_cc[z] == 5 && strummStates[midiChannel] == 0) {
+                    lastPortamento[midiChannel] = cc[z];
                 }
             }
             
@@ -1323,18 +1336,20 @@ void loop() {
         }
     }
 
-    //XTRA button functions
+    // XTRA button functions
     // shutdown recording if a channel is still recording
     if (isRecording > -1) {
         if (extraState != extraLastState) {
             if (extraState == LOW && shiftState == HIGH) {
                 MIDI.sendControlChange(110,0,isRecording); // loom recording off
                 isRecording = -1;
+                hasRecording[midiChannel] = 1;
             }
         }
         if (extraState == LOW && shiftState == LOW) {
             MIDI.sendControlChange(111,127,isRecording); // loom delete recording
             shortBlink(0);  // Blink because delete recording
+            hasRecording[midiChannel] = 0;
         }
     } else if (stepStates[midiChannel] == 1 || loopStates[midiChannel] == 1) {
         if (extraState != extraLastState) {
@@ -1347,15 +1362,7 @@ void loop() {
             if (extraState == LOW && shiftState == LOW) {
                 MIDI.sendControlChange(111,127,midiChannel); // loom delete recording
                 shortBlink(0); // Blink because delete recording
-            }
-        }
-    } else if (strummStates[midiChannel] == 1) {
-        //Strumm panic shutdown all notes off
-        if (extraState != extraLastState) {
-            if (extraState == LOW) {
-                MIDI.sendControlChange(123,0,midiChannel);
-                lastNoteStriked = -1;
-                shortBlink(0); // Blink because delete recording
+                hasRecording[midiChannel] = 0;
             }
         }
     } else {
@@ -1387,18 +1394,30 @@ void loop() {
     //Legato button functions
     if (legatoState != legatoLastState) {
         if (legatoState == LOW && shiftState == HIGH) {
-            if (legatoStates[midiChannel] == 1){
+            if(strummStates[midiChannel] == 1) {
+                //panic button strumm
+                MIDI.sendControlChange(123,0,midiChannel);
+                lastNoteStriked = -1;
+                shortBlink(0); // Blink because delete recording
+            } else if(legatoStates[midiChannel] == 1){
+                // Legato retrig so all
+                legatoStates[midiChannel] = 2;
+                MIDI.sendControlChange(20,127,midiChannel);
+            } else if (legatoStates[midiChannel] == 2){
+                // no legato
                 legatoStates[midiChannel] = 0;
                 MIDI.sendControlChange(20,0,midiChannel);
+                MIDI.sendControlChange(32,0,midiChannel);
             } else {
                 legatoStates[midiChannel] = 1;
+                // Legato pitch
+                MIDI.sendControlChange(32,127,midiChannel);
                 mcpArray[2].digitalWrite(tensDP, HIGH);
                 digitalWrite(tensAnode, LOW);
 
                 for (int f=0; f < 7; f++) {
                     mcpArray[2].digitalWrite(tens[f], letter_array[7][f]);
                 }
-                MIDI.sendControlChange(20,120,midiChannel);
             }
         }
 
@@ -1416,8 +1435,10 @@ void loop() {
     }
     legatoLastState = legatoState;
 
-    if (legatoStates[midiChannel] == 1){
+    if(legatoStates[midiChannel] == 2 && strummStates[midiChannel] == 0) {
         digitalWrite(legatoLed, HIGH);
+    } else if(legatoStates[midiChannel] == 1 && strummStates[midiChannel] == 0) {
+        digitalWrite(legatoLed, (millis() / (blinkyInterval/2)) % 2);
     } else {
         digitalWrite(legatoLed, LOW);
     }
