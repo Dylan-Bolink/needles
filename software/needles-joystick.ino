@@ -523,8 +523,8 @@ void loop() {
     if(hasJoystick == true) {
         xtraValY = analogRead(xtraAnalogY);
         // CHECK: what is better jitter control or no jitter control
-        // if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
-        // if (xtraValY != xtraValStateY){
+        if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
+        if (xtraValY != xtraValStateY){
             if(velocityJoystickState==LOW) {
                 //Y axis to velocity
                 velocityJoystick = xtraValY;
@@ -533,7 +533,7 @@ void loop() {
                 MIDI.sendControlChange(2,map(xtraValY,0,1020,127,0),2);
                 xtraValStateY = xtraValY;
             }
-        // }
+        }
         
         xtraValX = analogRead(xtraAnalogX);
         if(pitchBendState == LOW){
@@ -549,10 +549,10 @@ void loop() {
             //IDEA: what to do with X axis when Y controls velocity?
         } else {
             //X axis to breath
-            // if ( abs(xtraValX - xtraValStateX) > 1)  { 
+            if ( abs(xtraValX - xtraValStateX) > 1)  { 
                 MIDI.sendControlChange(2,map(xtraValX,0,1020,0,127),1);
                 xtraValStateX = xtraValX;
-            // }
+            }
         }
     }
     
