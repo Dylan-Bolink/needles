@@ -5,9 +5,11 @@
 // Loom changes by Dylan December 2020
 // Loom oscilattor update April 2021
 // Needles 2 with joystick update January 2024
+// RC / Layout update July 2024
 
 // Set hasJoystick to false if you don't have a joystick.
-// Set numMidiChannels to desired number of MIDI channels. Max is 8.
+// MaxMidi channels are handeld by midi and octave buttons.
+// Set rcChannel on yarns to 8.
 
 #include <MIDI.h>
 #include <Wire.h>
@@ -135,9 +137,7 @@ int clockCounter = 0;
 const byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5};
 
 // euclidean cc
-
 // LOOM only has 0-31 EC length
-
 const byte euclideanCCVal[32] = {0,4,8,12,16,20,25,29,33,37,41,45,49,53,57,61,66,70,74,78,82,86,90,94,98,102,107,111,115,119,123,127};
 const byte euclideanVal[32] = {0,1,2,3,4,5,6,7,8,9,1,1,2,3,4,5,6,7,8,9,2,1,2,3,4,5,6,7,8,9,3,1};  // 0-31 steps length;
 int euclideanCounter[8] = { 0,0,0,0,0,0,0,0 };
@@ -156,20 +156,55 @@ int C = 0; //Address pin C
 byte cc[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte pot[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte lastpot[] = {0, 0, 0, 0, 0, 0, 0, 0};
-const int potThreshold = 1; // threshold for potentiometer jitter
+const int potThreshold = 2; // threshold for potentiometer jitter
 
 //Define cc number of each pot
 byte midi_cc[] = {104, 105, 106, 25, 23, 21, 1, 5};
+// range, direction, pattern, fine tune, lfo rate, pitch bend rate, vibrato depth, portamento
 
 //Don't change the first one this will be used by the EL/ARP switcher
 byte shift_cc[] = {0, 25, 27, 74, 77, 78, 79, 80};
+// euc, fine tune, tuning system, hold pedal, attack, decay, sustain, release
 
 #define midiButton 7 // mcpArray[1]
 byte MidiButtonState = 0;
 byte MidiButtonLastState = HIGH;
 byte midiChannel = 0;  // Midi Channel
-const int defMidi = 1; // default Midi channel
-const int numMidiChannels = 2; // # of MIDI Channels, can be changed to 8 for controlling two Yarns from one Needles.
+
+unsigned long currentTime = 0;
+unsigned long pressedMidi = 0;
+unsigned long releasedMidi = 0;
+boolean midiHold = false;
+boolean midiHoldReset = false;
+
+// layout settings
+int currentLayout = 1;
+byte layoutChannels[6] = {1,2,1,3,4,1};
+byte layoutCC[6] = {0,15,31,127,25,36};
+int rcChannel = 8;
+
+//128 is ignore cc for that channel
+const byte rc_cc[8][4] {
+    {26,58,90,122},     // ARP RANGE
+    {0,128,128,128},    // OUTPUT CLOCK
+    {25,57,89,121},     // arp gate length
+    {3,128,128,128},    // SWING
+    {14,46,78,110},     // VIB Speed
+    {12,44,76,108},     // Bend Range
+    {13,45,77,109},     // VIB Mod
+    {10,42,74,106}      // Portamento
+};
+
+const byte shift_rc_cc[8] {1, 2, 3, 4, 77, 78, 79, 80};
+
+const int layoutLeds[6][7] {
+    {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},     // Mono         1M  - 0 - - -
+    {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW},    // Dual mono    2M  - 0 - 0 -
+    {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},    // Paraphonic   2P  0 0 - - -
+    {LOW,HIGH,LOW,HIGH,LOW,HIGH,LOW},   // 3 mono       3M  0 - 0 - 0
+    {LOW,HIGH,HIGH,LOW,HIGH,HIGH,LOW},  // 4 mono       4M  0 0 - 0 0
+    {LOW,HIGH,HIGH,HIGH,HIGH,LOW,LOW}   // 4 chord      4P  0 0 0 0 -
+};
 
 const long blinkyInterval = 200; //set blink led speed
 
@@ -327,6 +362,7 @@ char notes[18] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};   //pin setup fo
 boolean noteOn[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //button state
 boolean noteLast[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //last button state
 boolean notesPressed[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
+boolean notesPressedAll[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
 const int noteCount = 18;
 
 //Loom strumm keyboard
@@ -335,6 +371,17 @@ const int noteCount = 18;
 const int noteOnDelay = 5; // Delay before a note is turned on, in milliseconds
 const int noteOffDelay = 4; // Delay before a note is turned off, in milliseconds
 int lastNoteStriked = -1; // Last note turned on
+
+bool isMidiNoteOn = false;
+// Function to handle MIDI note on message
+void handleNoteOn(byte channel, byte note, byte velocity) {
+    isMidiNoteOn = true;
+}
+
+// Function to handle MIDI note off message
+void handleNoteOff(byte channel, byte note, byte velocity) {
+    isMidiNoteOn = false;
+}
 
 // Octave keys
 char changePins[2] = {3,4}; // octave up/down mcpArray[1]
@@ -434,13 +481,15 @@ void setup() {
     digitalWrite(MIDI_ENABLE, HIGH);
 
     Serial.begin(31250);
-    MIDI.begin (MIDI_CHANNEL_OMNI);           
+    MIDI.begin (MIDI_CHANNEL_OMNI);     
 
-    // MIDI.begin();
+    MIDI.setHandleNoteOn(handleNoteOn);
+    MIDI.setHandleNoteOff(handleNoteOff);
 }
 
 void loop() {
     MIDI.read();
+    currentTime = millis();
     // 7 Segment
     MidiButtonState = mcpArray[1].digitalRead(midiButton);
 
@@ -452,14 +501,29 @@ void loop() {
     // Set to midichannel 1
     if (midiChannel == 0){
         for (int j=0; j < 7; j++) {
-            mcpArray[2].digitalWrite(ones[j], num_array[defMidi][j]);
+            mcpArray[2].digitalWrite(ones[j], num_array[1][j]);
         }
         midiChannel = 1;
     }
 
     // Choose midi channel and display
-    if (MidiButtonState != MidiButtonLastState) {
-        if (MidiButtonState == LOW&&shiftState==HIGH) {
+    if(MidiButtonState == LOW && MidiButtonLastState == HIGH) {
+        pressedMidi = millis();
+        midiHold = true;
+    } else if(MidiButtonState == HIGH && MidiButtonLastState == LOW) {
+        releasedMidi = millis();
+        midiHold = false;
+        
+        //fix pitches when midi hold is released but still pressing pitch bend
+        if(pitchOn == 1) {
+            for(int m=0;m<layoutChannels[currentLayout];m++){
+                MIDI.sendPitchBend(0,m + 1); // 8192 on Channel 1
+            }
+            pitchOn = 0;
+        }
+
+        
+        if ((releasedMidi - pressedMidi) < 300 &&shiftState==HIGH) {
             for(char n=0;n<noteCount;n++){
                 //loom notes pressed
                 if(notesPressed[n]==1){
@@ -468,7 +532,7 @@ void loop() {
                 notesPressed[n]=0;
             }
 
-            if(midiChannel < numMidiChannels) {
+            if(midiChannel < layoutChannels[currentLayout]) {
                 midiChannel += 1;
             } else {
                 midiChannel = 1;
@@ -490,7 +554,7 @@ void loop() {
                 digitalWrite(tensAnode, HIGH);
                 mcpArray[2].digitalWrite(tensDP, HIGH);
             }
-        } else if (MidiButtonState==LOW&&shiftState==LOW) {
+        } else if ((releasedMidi - pressedMidi) < 300 &shiftState==LOW) {
             //loom enter strumm mode
             if (strummStates[midiChannel] == 1){
                 strummStates[midiChannel] = 0;
@@ -520,11 +584,10 @@ void loop() {
 
     MidiButtonLastState = MidiButtonState;
 
-    if(hasJoystick == true) {
+    if(hasJoystick) {
         xtraValY = analogRead(xtraAnalogY);
         // CHECK: what is better jitter control or no jitter control
         if ( abs(xtraValY - xtraValStateY) > 1)  { // have we moved enough to avoid analog jitter?
-        if (xtraValY != xtraValStateY){
             if(velocityJoystickState==LOW) {
                 //Y axis to velocity
                 velocityJoystick = xtraValY;
@@ -541,8 +604,8 @@ void loop() {
             int pitchBendValMapped = xtraValX - 512; // 0 at mid point
             if ( abs(pitchBendValMapped - xtraValStateX) > 1)  { // have we moved enough to avoid analog jitter?
                 if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
-                MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
-                xtraValStateX = pitchBendValMapped;
+                    MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
+                    xtraValStateX = pitchBendValMapped;
                 }
             }
         } else if(velocityJoystickState == LOW) {
@@ -564,7 +627,7 @@ void loop() {
         changeButton[i]=mcpArray[1].digitalRead(changePins[i]); //read state of modifier keys
 
         //reset octaves - if modifier buttons 1 and 2 are pressed together simultaneously
-        if(changeButton[0] && changeButton[1] == HIGH && shiftState == HIGH){
+        if(changeButton[0] && changeButton[1] == HIGH && shiftState == HIGH && !midiHold){
             keysLast=keysBase; //revert keyboard base to C3
             // light up default center octave led
             for (int n=0; n < 7; n++){
@@ -573,7 +636,7 @@ void loop() {
             MIDI.sendControlChange(123,0,midiChannel);
         }
         //change octaves - if modifier buttons 1 or 2 are pressed
-        if(changeButton[i]==HIGH && changeButtonLast[i] != changeButton[i] && shiftState == HIGH){
+        if(changeButton[i]==HIGH && changeButtonLast[i] != changeButton[i] && shiftState == HIGH && !midiHold){
             if(strummStates[midiChannel] == 1) {
                 for(char n = 0; n < noteCount; n++){
                     //loom notes pressed
@@ -605,7 +668,24 @@ void loop() {
     //end octave switch
 
     //Loom octave seq switcher
-    if(changeButton[0] == HIGH &&changeButtonLast[0] != changeButton[0] && shiftState == LOW){
+    // if midi key is held and octave button is pressed
+    if (midiHold && changeButton[0] == HIGH &&changeButtonLast[0] != changeButton[0]){
+        if(currentLayout > 4) {
+            currentLayout = 0;
+        } else {
+            currentLayout++;
+        }
+        for(int m=0;m<8;m++){
+            holdStates[m] = 0;
+            MIDI.sendControlChange(64,0,m + 1);
+        }
+        // if midi button is held down longer then 300ms and octave button is pressed
+        MIDI.sendControlChange(1,layoutCC[currentLayout],rcChannel);
+
+        if(midiChannel > layoutChannels[currentLayout]) {
+            midiChannel = 1;
+        }
+    } else if(changeButton[0] == HIGH &&changeButtonLast[0] != changeButton[0] && shiftState == LOW){
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         if(stepStates[midiChannel]==1) {
@@ -629,7 +709,22 @@ void loop() {
         }
     }
 
-    if(changeButton[1] == HIGH && changeButtonLast[1] != changeButton[1] && shiftState == LOW){
+    if (midiHold && changeButton[1] == HIGH &&changeButtonLast[1] != changeButton[1]){
+        for(int m=0;m<8;m++){
+            holdStates[m] = 0;
+            MIDI.sendControlChange(64,0,m + 1);
+        }
+        if(currentLayout > 0) {
+            currentLayout -= 1;
+        } else {
+            currentLayout = 5;
+        }
+
+        MIDI.sendControlChange(1,layoutCC[currentLayout],rcChannel);
+        if(midiChannel > layoutChannels[currentLayout]) {
+            midiChannel = 1;
+        }
+    } else if(changeButton[1] == HIGH && changeButtonLast[1] != changeButton[1] && shiftState == LOW){
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         if(loopStates[midiChannel] == 1) {
@@ -659,11 +754,11 @@ void loop() {
         mcpArray[2].digitalWrite(euclidean, (millis() / (blinkyInterval/2)) % 2);
     }
 
-    if(loopStates[midiChannel] == 1 && isBlinking == false) {
+    if(loopStates[midiChannel] == 1 && !isBlinking) {
         mcpArray[1].digitalWrite(15, (millis() / blinkyInterval) % 2);
     }
 
-    if(stepStates[midiChannel] == 1  && isBlinking == false) {
+    if(stepStates[midiChannel] == 1  && !isBlinking) {
         mcpArray[1].digitalWrite(10, (millis() / blinkyInterval) % 2);
     }
 
@@ -689,8 +784,29 @@ void loop() {
     //loop for the 17 button keyboard
     for(char n=0; n < noteCount; n++){
         noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
+        // if midi button is held down strike all channel notes
+        if (midiHold) {
+            if(noteOn[n] == HIGH && noteLast[n] != noteOn[n]){ //if a key(s) is pressed
+                for (int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendNoteOn(keysLast+n,velocityMap,m + 1);
+                }
 
-        if(strummStates[midiChannel] == 1) {
+                noteLast[n] = noteOn[n];
+                notesPressedAll[n]=1;
+                notesPressed[n]=1;
+            }
+
+            if(noteOn[n] == LOW && noteLast[n] != noteOn[n]){ //if last keyboard state changes
+                noteLast[n] = noteOn[n];
+                if(notesPressed[n]==1) {
+                    for (int m=0;m<layoutChannels[currentLayout];m++){
+                        MIDI.sendNoteOff(keysLast+n,velocityMap,m + 1);
+                    }
+                }
+                notesPressedAll[n]=0;
+                notesPressed[n]=0;
+            }
+        } else if(strummStates[midiChannel] == 1) {
             // New strumm version
              if(noteOn[n] == HIGH && noteLast[n] != noteOn[n]){
                 if(lastNoteStriked!=-1){
@@ -729,7 +845,14 @@ void loop() {
             if(noteOn[n] == LOW && noteLast[n] != noteOn[n]){ //if last keyboard state changes
                 noteLast[n] = noteOn[n];
                 if(notesPressed[n]==1) {
-                    MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
+                    if(notesPressedAll[n]==1){
+                        for (int m=0;m<layoutChannels[currentLayout];m++){
+                            MIDI.sendNoteOff(keysLast+n,velocityMap,m + 1);
+                        }
+                        notesPressedAll[n]=0;
+                    } else {
+                        MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
+                    }
                 }
                 notesPressed[n]=0;
             }
@@ -877,6 +1000,61 @@ void loop() {
             //7 changes model
             MIDI.sendControlChange(71,modelStart[modelIndex[midiChannel]],midiChannel);
         }
+    } else if (midiHold) {
+        //3 is advance 7 is back. shift is cv aux out no shift is fm ratio?
+        //3 advances cv aux out
+        if (wholeNoteState != wholeNoteLastState) {
+            if (wholeNoteState == LOW&&shiftState == LOW) {
+                cvAuxOutAltIndex[midiChannel] = 0;
+                if (cvAuxOutIndex[midiChannel] < 5){
+                    cvAuxOutIndex[midiChannel]++;
+                } else {
+                    cvAuxOutIndex[midiChannel] = 0;
+                }
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],m + 1);
+                }
+            }
+            if (wholeNoteState == LOW&&shiftState == HIGH) {
+                cvAuxOutIndex[midiChannel] = 0;
+                if (cvAuxOutAltIndex[midiChannel] < 6){
+                    cvAuxOutAltIndex[midiChannel]++;
+                } else {
+                    cvAuxOutAltIndex[midiChannel] = 0;
+                }
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],m + 1);
+                }
+            }
+        }
+        
+        //7 goes back
+        if (thirdNoteState != thirdNoteLastState) {
+            if (thirdNoteState == LOW&&shiftState == LOW) {
+                cvAuxOutAltIndex[midiChannel] = 0;
+                if (cvAuxOutIndex[midiChannel] > 0){
+                    cvAuxOutIndex[midiChannel]--;
+                } else {
+                    cvAuxOutIndex[midiChannel] = 5;
+                }
+                MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],midiChannel);
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[midiChannel]],m + 1);
+                }
+            }
+            if (thirdNoteState == LOW&&shiftState == HIGH) {
+                cvAuxOutIndex[midiChannel] = 0;
+                if (cvAuxOutAltIndex[midiChannel] > 0){
+                    cvAuxOutAltIndex[midiChannel]--;
+                } else {
+                    cvAuxOutAltIndex[midiChannel] = 6;
+                }
+
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[midiChannel]],m + 1);
+                }
+            }
+        }
     } else {
         //3 is advance 7 is back. shift is cv aux out no shift is fm ratio?
         //3 advances cv aux out
@@ -941,7 +1119,16 @@ void loop() {
 
     //Tie:
     if (tieState != tieLastState) {
-        if(loopStates[midiChannel] == 1) {
+        if (midiHold) {
+            if (tieState == LOW) {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(123,0,m + 1);
+                }  
+                for(int m=0;m<8;m++){
+                    holdStates[m] = 0;
+                }
+            }
+        } else if(loopStates[midiChannel] == 1) {
             if (tieState == LOW && shiftState == HIGH) {
                 //undo last note
                 MIDI.sendControlChange(restChannel,127,midiChannel); // loom delete newest note
@@ -981,10 +1168,24 @@ void loop() {
             }
             slideOn = 1;
             pitchOn = 1;
-            MIDI.sendPitchBend(8190,midiChannel); // 8192 on Channel 1
+
+            if(midiHold) {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendPitchBend(8190,m + 1); // 8192 on Channel 1
+                }
+            } else {
+                MIDI.sendPitchBend(8190,midiChannel); // 8192 on Channel 1
+            }
+        
 
         } else if (restState == HIGH && shiftState == HIGH && pitchOn == 1) {
-            MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
+            if(midiHold) {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendPitchBend(0,m + 1); // 8192 on Channel 1
+                }
+            } else {
+                MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
+            }
             pitchOn = 0;
         }
 
@@ -997,8 +1198,15 @@ void loop() {
                 shortBlink(0); // Blink because clock is maxed out
             }
 
-            MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
-            MIDI.sendControlChange(103,gateLengthVal[clockCounter],midiChannel);
+            if(midiHold){
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(102,clockCCVal[clockCounter],m + 1);
+                    MIDI.sendControlChange(103,gateLengthVal[clockCounter],m + 1);
+                }
+            } else {
+                MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
+                MIDI.sendControlChange(103,gateLengthVal[clockCounter],midiChannel);
+            }
 
             digitalWrite(tensAnode, LOW);
             for (int j=0; j < 7; j++) {
@@ -1025,9 +1233,22 @@ void loop() {
             }
             slideOn = 1;
             pitchOn = 1;
-            MIDI.sendPitchBend(-8192,midiChannel); // 6000 on Channel 1
+
+            if(midiHold) {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendPitchBend(8192,m + 1); // 8192 on Channel 1
+                }
+            } else {
+                MIDI.sendPitchBend(-8192,midiChannel); // 6000 on Channel 1
+            }
         } else if (slideState == HIGH && shiftState == HIGH && pitchOn == 1) {
-            MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
+            if(midiHold) {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendPitchBend(0,m + 1); // 8192 on Channel 1
+                }
+            } else {
+                MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
+            }
             pitchOn = 0;
         }
 
@@ -1041,8 +1262,15 @@ void loop() {
                 shortBlink(0); // blink because clock is on 0
             }
 
-            MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
-            MIDI.sendControlChange(103,gateLengthVal[clockCounter],midiChannel);
+            if(midiHold){
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(102,clockCCVal[clockCounter],m + 1);
+                    MIDI.sendControlChange(103,gateLengthVal[clockCounter],m + 1);
+                }
+            } else {
+                MIDI.sendControlChange(102,clockCCVal[clockCounter],midiChannel);
+                MIDI.sendControlChange(103,gateLengthVal[clockCounter],midiChannel);
+            }
 
             digitalWrite(tensAnode, LOW);
             for (int j=0; j < 7; j++) {
@@ -1082,6 +1310,10 @@ void loop() {
             stopBlinking();
         }
         spinningShape(sliderMapped/8);
+    } else if (sliderMapped != sliderLastMapped && midiHold) {
+        for (int m=0;m<layoutChannels[currentLayout];m++){
+            MIDI.sendControlChange(82,sliderMapped,m + 1);
+        }
     } else if (sliderMapped != sliderLastMapped && shiftState == HIGH){
         //loom pwm init no shift
         if (oscMode[midiChannel] == 1) {
@@ -1118,7 +1350,7 @@ void loop() {
                 }
             }
 
-        if (abs(cc[0] - lastpot[0]) >= potThreshold) {
+        if (abs(cc[0] - lastpot[0]) >= potThreshold && !midiHold) {
             arpLedFix = HIGH;
 
             if(cc[0] > 25) {
@@ -1172,7 +1404,39 @@ void loop() {
         eucOnFill=cc[2]/3.9; // 0-32
         eucOnRotate=cc[3]/3.9; // 0-32
 
-        if(shift_cc[z] > 0 && shiftState == LOW){
+        if(midiHold && shiftState == HIGH) {
+            for (int n=0; n < 4; n++){
+                if (rc_cc[z][n] != 128) {
+                    MIDI.sendControlChange(rc_cc[z][n],cc[z],rcChannel);
+                }
+            }
+
+            if (rc_cc[z][0] == 10 && cc[z] == 64) {
+                longBlink(0); //blink because portamento is centered
+            } else {
+                stopBlinking();
+            }
+        } else if (midiHold && shiftState == LOW) {
+            //arp/seq division per channel
+            if (shift_rc_cc[z] == 1) {
+                MIDI.sendControlChange(102,cc[0],1);
+            } else if (shift_rc_cc[z] == 2) {
+                MIDI.sendControlChange(102,cc[1],2);
+            } else if (shift_rc_cc[z] == 3) {
+                MIDI.sendControlChange(102,cc[2],3);
+            } else if (shift_rc_cc[z] == 4) {
+                MIDI.sendControlChange(102,cc[2],4);
+            } else {
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(shift_rc_cc[z],cc[z],m + 1);
+
+                    if(oscMode[m + 1] == 0 && cvAuxOutIndex[m + 1] != 5) {
+                        cvAuxOutIndex[m + 1] = 5;
+                        MIDI.sendControlChange(31,69,m + 1);
+                    }
+                }
+            }
+        } else if(shift_cc[z] > 0 && shiftState == LOW){
             // SHIFT pots functions
 
             if(shift_cc[z] == 74) {
@@ -1351,6 +1615,29 @@ void loop() {
             shortBlink(0);  // Blink because delete recording
             hasRecording[midiChannel] = 0;
         }
+    } else if (midiHold) {
+        if (extraState != extraLastState) {
+            if (extraState == LOW && shiftState == HIGH) {
+                notePriorityVal[midiChannel] = notePriorityVal[midiChannel] + 32;
+                if(notePriorityVal[midiChannel] > 127) {
+                    notePriorityVal[midiChannel] = 0;
+                }
+                if(notePriorityVal[midiChannel] == 32) {
+                    shortBlink(0); // Blink because note priority is lowest
+                } else {
+                    stopBlinking();
+                }
+            }
+            if (extraState == LOW && shiftState == LOW) { //always reset to default (LOWEST)
+                notePriorityVal[midiChannel] = 32;
+                shortBlink(0); // Blink because note priority is lowest
+            }
+
+            for (int m=0;m<layoutChannels[currentLayout];m++){
+                MIDI.sendControlChange(19,notePriorityVal[midiChannel],m + 1);
+                notePriorityVal[m + 1] = notePriorityVal[midiChannel];
+            }
+        }
     } else if (stepStates[midiChannel] == 1 || loopStates[midiChannel] == 1) {
         if (extraState != extraLastState) {
             if (extraState == LOW && shiftState == HIGH) {
@@ -1385,33 +1672,33 @@ void loop() {
                 shortBlink(0); // Blink because note priority is lowest
                 MIDI.sendControlChange(19,notePriorityVal[midiChannel],midiChannel);
             }
-
-
         }
     }
     extraLastState = extraState;
 
     //Legato button functions
     if (legatoState != legatoLastState) {
-        if (legatoState == LOW && shiftState == HIGH) {
-            if(strummStates[midiChannel] == 1) {
-                //panic button strumm
-                MIDI.sendControlChange(123,0,midiChannel);
-                lastNoteStriked = -1;
-                shortBlink(0); // Blink because delete recording
-            } else if(legatoStates[midiChannel] == 1){
+        if (legatoState == LOW && midiHold && shiftState == HIGH) {
+            if(legatoStates[midiChannel] == 1){
                 // Legato retrig so all
-                legatoStates[midiChannel] = 2;
-                MIDI.sendControlChange(20,127,midiChannel);
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    legatoStates[m + 1] = 2;
+                    MIDI.sendControlChange(20,127,m + 1);
+                }
             } else if (legatoStates[midiChannel] == 2){
                 // no legato
-                legatoStates[midiChannel] = 0;
-                MIDI.sendControlChange(20,0,midiChannel);
-                MIDI.sendControlChange(32,0,midiChannel);
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    legatoStates[m + 1] = 0;
+                    MIDI.sendControlChange(20,0,m + 1);
+                    MIDI.sendControlChange(32,0,m + 1);
+                }
             } else {
-                legatoStates[midiChannel] = 1;
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    legatoStates[m + 1] = 1;
+                    MIDI.sendControlChange(32,127,m+1);
+                }
+
                 // Legato pitch
-                MIDI.sendControlChange(32,127,midiChannel);
                 mcpArray[2].digitalWrite(tensDP, HIGH);
                 digitalWrite(tensAnode, LOW);
 
@@ -1419,9 +1706,8 @@ void loop() {
                     mcpArray[2].digitalWrite(tens[f], letter_array[7][f]);
                 }
             }
-        }
-
-        if (legatoState == LOW && shiftState == LOW) {
+        } else if (legatoState == LOW && midiHold && shiftState == LOW) {
+            // change response for all parts
             if (responseStates[midiChannel] < 2){
                 responseStates[midiChannel]++;
                 stopBlinking();
@@ -1429,8 +1715,51 @@ void loop() {
                 responseStates[midiChannel] = 0;
                 shortBlink(0); // Blink because response is transpose
             }
-            MIDI.sendControlChange(76,responseVal[responseStates[midiChannel]],midiChannel);
+            for(int m=0;m<layoutChannels[currentLayout];m++){
+                MIDI.sendControlChange(76,responseVal[responseStates[midiChannel]],m + 1);
+                responseStates[m + 1] = responseStates[midiChannel];
+            }
             transposeShape(responseStates[midiChannel]);
+        } else {
+            if (legatoState == LOW && shiftState == HIGH) {
+                if(strummStates[midiChannel] == 1) {
+                    //panic button strumm
+                    MIDI.sendControlChange(123,0,midiChannel);
+                    lastNoteStriked = -1;
+                    shortBlink(0); // Blink because delete recording
+                } else if(legatoStates[midiChannel] == 1){
+                    // Legato retrig so all
+                    legatoStates[midiChannel] = 2;
+                    MIDI.sendControlChange(20,127,midiChannel);
+                } else if (legatoStates[midiChannel] == 2){
+                    // no legato
+                    legatoStates[midiChannel] = 0;
+                    MIDI.sendControlChange(20,0,midiChannel);
+                    MIDI.sendControlChange(32,0,midiChannel);
+                } else {
+                    legatoStates[midiChannel] = 1;
+                    // Legato pitch
+                    MIDI.sendControlChange(32,127,midiChannel);
+                    mcpArray[2].digitalWrite(tensDP, HIGH);
+                    digitalWrite(tensAnode, LOW);
+
+                    for (int f=0; f < 7; f++) {
+                        mcpArray[2].digitalWrite(tens[f], letter_array[7][f]);
+                    }
+                }
+            }
+
+            if (legatoState == LOW && shiftState == LOW) {
+                if (responseStates[midiChannel] < 2){
+                    responseStates[midiChannel]++;
+                    stopBlinking();
+                } else {
+                    responseStates[midiChannel] = 0;
+                    shortBlink(0); // Blink because response is transpose
+                }
+                MIDI.sendControlChange(76,responseVal[responseStates[midiChannel]],midiChannel);
+                transposeShape(responseStates[midiChannel]);
+            }
         }
     }
     legatoLastState = legatoState;
@@ -1456,17 +1785,32 @@ void loop() {
         releasedShift = millis();
 
         if((releasedShift - pressedShift) < 300) {
-            if(holdStates[midiChannel]==1) {
-                holdStates[midiChannel] = 0;
-                MIDI.sendControlChange(64,0,midiChannel);
-            } else {
-                activeKey = false;
+            if(midiHold) {
+                activeKey = isMidiNoteOn;
                 for(char n=0;n<noteCount;n++){
                     if(noteOn[n]==HIGH){
                         activeKey = true;
                     }
                 }
-
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    if(holdStates[m + 1] == 1){
+                        holdStates[m + 1] = 0;
+                        MIDI.sendControlChange(64,0,m + 1);
+                    } else if (activeKey) {
+                        holdStates[m + 1] = 1;
+                        MIDI.sendControlChange(64,127,m + 1);
+                    }
+                }
+            } else if(holdStates[midiChannel]==1) {
+                holdStates[midiChannel] = 0;
+                MIDI.sendControlChange(64,0,midiChannel);
+            } else {
+                activeKey = isMidiNoteOn;
+                for(char n=0;n<noteCount;n++){
+                    if(noteOn[n]==HIGH){
+                        activeKey = true;
+                    }
+                }
                 if(activeKey) {
                     holdStates[midiChannel] = 1;
                     MIDI.sendControlChange(64,127,midiChannel);
@@ -1476,12 +1820,22 @@ void loop() {
     }
     shiftLastState = shiftState;
 
-
-    // int animationFrameTimes[2][4] {
-    //     {150,300,400,650}, // fast
-    //     {1050,1200,1400,1600}, // slow
-    // };
-    // int animationSpeed = 0;
+    if((currentTime - 300) > pressedMidi && midiHold && !isBlinking) {
+        // layoutLeds shows the current layout
+        for (int n=0; n < 7; n++){
+            mcpArray[1].digitalWrite(ledPins[n], layoutLeds[currentLayout][n]);
+        }
+        midiHoldReset = true;
+    } else if(midiHoldReset && !midiHold && !isBlinking) {
+        for (int j=0; j < 9; j++) {
+            if (keysLast == octaveNote_array[j]){
+                for (int n=0; n < 7; n++){
+                    mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[j][n]);
+                }
+            }
+        } 
+        midiHoldReset = false;
+    }
     
     if (isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][3]) {
         isBlinking = false;
@@ -1513,12 +1867,6 @@ void loop() {
 }
 //End void loop
 
-// animationType = selected animation
-// int animationFrames[3][3] {
-//     {11,12,4}, // centered
-//     {10,5,4}, // left swipe
-//     {9,3,4} // right swipe
-// };
 
 void longBlink(int blinkNumber) {
     animationSpeed = 1; // 1 slow
