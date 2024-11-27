@@ -570,12 +570,12 @@ void loop() {
         // CHECK: what is better jitter control or no jitter control
         if (abs(xtraValY - xtraValStateY) > joystickThreshold) { // have we moved enough to avoid analog jitter?
             if(pitchBendState == LOW){
-                if ( abs(xtraValY - xtraValStateY) > joystickThreshold && joystickControl[stateNumber] > 0)  { 
+                if (joystickControl[stateNumber] > 0)  { 
                     int midpoint = xtraValY - 510;
                     if (midpoint > 0) {
-                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 510, 127, joystickMidpoint[stateNumber]), midiChannel);
-                    } else {
-                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, -510, joystickMidpoint[stateNumber], 0), midiChannel);
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 510, joystickMidpoint[stateNumber], 0), midiChannel);
+                    } else if(midpoint > -510) {
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, -510,joystickMidpoint[stateNumber], 127), midiChannel);
                     }
                 }
             } else if(velocityJoystickState==LOW) {
@@ -600,7 +600,7 @@ void loop() {
                     MIDI.sendPitchBend(scaledPitchBend, midiChannel);
                 }
             } else if(velocityJoystickState == LOW) {
-                if ( abs(xtraValX - xtraValStateX) > joystickThreshold && joystickControl[stateNumber] > 0)  { 
+                if (joystickControl[stateNumber] > 0)  { 
                     int midpoint = xtraValX - 510;
                     if (midpoint > 0) {
                         MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 510, joystickMidpoint[stateNumber], 127), midiChannel);
