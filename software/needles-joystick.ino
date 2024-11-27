@@ -383,6 +383,8 @@ unsigned long noteStrumDelay[4] = {5,5,5,5};
 boolean setNewJoystick = false;
 boolean lockJoystick = false;
 boolean joystickActivity = false;
+
+unsigned long waitForJoystick = 0;
 int joystickLastState = 0;
 long joystickControl[4] = {104,104,104,104};
 long joystickMidpoint[4] = {0,0,0,0};
@@ -569,11 +571,11 @@ void loop() {
         if (abs(xtraValY - xtraValStateY) > joystickThreshold) { // have we moved enough to avoid analog jitter?
             if(pitchBendState == LOW){
                 if ( abs(xtraValY - xtraValStateY) > joystickThreshold && joystickControl[stateNumber] > 0)  { 
-                    int ccJoystickVal = xtraValY - 512;
-                    if (abs(ccJoystickVal) > 5) {
-                        MIDI.sendControlChange(joystickControl[stateNumber], map(ccJoystickVal, 512, 1020, joystickMidpoint[stateNumber], 127), midiChannel);
+                    int midpoint = xtraValY - 510;
+                    if (midpoint > 0) {
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 510, 127, joystickMidpoint[stateNumber]), midiChannel);
                     } else {
-                        MIDI.sendControlChange(joystickControl[stateNumber], map(ccJoystickVal, 0, 512, 0, joystickMidpoint[stateNumber]), midiChannel);
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, -510, joystickMidpoint[stateNumber], 0), midiChannel);
                     }
                 }
             } else if(velocityJoystickState==LOW) {
@@ -589,13 +591,6 @@ void loop() {
         if (abs(xtraValX - xtraValStateX) > joystickThreshold)  { 
             if(pitchBendState == LOW){
                 //X axis to pitch bend
-                int pitchBendValMapped = xtraValX - 512; // 0 at mid point
-                if ( abs(pitchBendValMapped) > 4) { // are we out of the central dead zone?
-                    MIDI.sendPitchBend(16*pitchBendValMapped, midiChannel); // or -8 depending which way you want to go up and down 
-                }
-            } else if(velocityJoystickState == LOW) {
-                // IDEA: what to do with X axis when Y controls velocity?
-                // Check: is this a better pitchbend feuature? If yes place this code in the pitchbendState == LOW
                 int pitchBendValMapped = xtraValX - 512; // Center the joystick value
                 if (abs(pitchBendValMapped) > 5) {
                     // Normalize to a range between -1 and 1
@@ -604,16 +599,15 @@ void loop() {
                     int scaledPitchBend = scaledValue * 8192;// Scale it back to the pitch bend range
                     MIDI.sendPitchBend(scaledPitchBend, midiChannel);
                 }
-
-                // uncheck this after it to see if it works
-                // if ( abs(xtraValX - xtraValStateX) > joystickThreshold && joystickControl[stateNumber] > 0)  { 
-                //     int midpoint = xtraValX - 512
-                //     if (midpoint > joystickMidpoint[stateNumber]) {
-                //         MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 512, joystickMidpoint[stateNumber], 127), joystickChannel);
-                //     } else {
-                //         MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 512, 127, joystickMidpoint[stateNumber]), joystickChannel);
-                //     }
-                // }
+            } else if(velocityJoystickState == LOW) {
+                if ( abs(xtraValX - xtraValStateX) > joystickThreshold && joystickControl[stateNumber] > 0)  { 
+                    int midpoint = xtraValX - 510;
+                    if (midpoint > 0) {
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, 510, joystickMidpoint[stateNumber], 127), midiChannel);
+                    } else {
+                        MIDI.sendControlChange(joystickControl[stateNumber], map(midpoint, 0, -510, joystickMidpoint[stateNumber], 0), midiChannel);
+                    }
+                }
             } else {
                 //X axis to breath channel 1
                 MIDI.sendControlChange(2,map(xtraValX,0,1020,0,127),1);    
@@ -656,21 +650,12 @@ void loop() {
         }
         //change octaves - if modifier buttons 1 or 2 are pressed
         if(changeButton[i]==HIGH && changeButtonLast[i] != changeButton[i] && shiftState == HIGH && !midiHold){
+            turnOffAllNotes();
+            
             if(strummStates[stateNumber] == 1) {
-                for(char n = 0; n < noteCount; n++){
-                    //loom notes pressed
-                    MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
-                    notesPressed[n]=0;
-                    lastNoteStriked = -1;
-                }
+                lastNoteStriked = -1;
             }
-            for(char n = 0; n < noteCount; n++){
-                //loom notes pressed
-                if(notesPressed[n]==1){
-                    MIDI.sendNoteOff(keysLast+n,velocityMap,midiChannel);
-                    notesPressed[n]=0;
-                }
-            }
+        
             //change keyboard base up or down in octaves
             changekeys(octaveChanges[i],keysLast);
 
@@ -699,6 +684,7 @@ void loop() {
         MIDI.sendControlChange(1,layoutCC[currentLayout],rcChannel);
 
         if(midiChannel > layoutChannels[currentLayout]) {
+            turnOffAllNotes();
             midiChannel = 1;
             updateMidiChannelDisplay(1);
         }
@@ -1052,7 +1038,6 @@ void loop() {
     // end of whole note third note if statements
 
     //Tie:
-    // CHECK: does this work?
     if (tieState == LOW && tieState != tieLastState) {
         if (midiHold) {
             //panic button for all channels
@@ -1084,18 +1069,18 @@ void loop() {
                 MIDI.sendControlChange(restChannel,127,midiChannel); // CC113, 127 Velocity, Channel 1
             }
         } else {
-            if (shiftState == HIGH) {
-                setNewJoystick = true;
-                shortBlink(3); // blink joystick towards set new joystick button
-            } else if (joystickActivity) {
+            if (shiftState == HIGH && joystickActivity) {
                 lockJoystick = !lockJoystick;
                 
                 if(lockJoystick) {
                     shortBlink(5); // blink lock
                     joystickLastState = (pitchBendState == LOW) ? 1 : (velocityJoystickState == LOW) ? 2 : 3;
                 } else {
-                    shortBlink(6); // blink unlock
+                    shortBlink(2); // blink unlock
                 }
+            } else if (shiftState == LOW) {
+                setNewJoystick = true;
+                shortBlink(3); // blink joystick towards set new joystick button
             }
         }
     }
@@ -1407,7 +1392,6 @@ void loop() {
                     sendControlChange(27,cc[z],midiChannel);
                 } else if(midi_cc[z] == 5 && strummStates[stateNumber] == 1) {
                     // block portamento in strumm mode
-                    // CHECK: does this work? max strum is 132 will we need *2?
                     noteStrumDelay[stateNumber] = cc[z] + 5; //5 is the minimum delay
                 } else if(z == 0) {
                     if(cc[z] > 25) {
@@ -1419,7 +1403,6 @@ void loop() {
                 } else if(midi_cc[z] == 106 && ((eucStates[stateNumber] == 1  && arpStates[stateNumber] == 1) || (stepStates[stateNumber] == 1 && eucStates[stateNumber] == 1))){ // if cc2 is "pattern" change cc2 to euclidean fill and cc3 to euclidean rotate
                     sendControlChange(108,cc[z],midiChannel);
                 } else if(midi_cc[z] == 106 && arpStates[stateNumber] == 1){
-                    //CHECK: is this correct isnt the knob the wrong way around?
                     const int correctedArpPattern = map(cc[z], 0, 127, 127,0);
                     sendControlChange(midi_cc[z], correctedArpPattern, midiChannel);
                     if ((correctedArpPattern < 92 && correctedArpPattern > 88) && hasRecording[stateNumber] == 1) {
@@ -1485,7 +1468,6 @@ void loop() {
 
     // XTRA button functions
     // shutdown recording if a channel is still recording
-    // CHECK: does this work?
     if (extraState == LOW && extraState != extraLastState) {
         if (isRecording > -1) {
             if (shiftState == HIGH) {
@@ -1547,7 +1529,6 @@ void loop() {
     extraLastState = extraState;
 
     //Legato button functions
-    // CHECK: does this work?
     if (legatoState == LOW && legatoState != legatoLastState) {
         if (midiHold && shiftState == HIGH) {
             if(legatoStates[stateNumber] == 1){
@@ -1752,12 +1733,17 @@ void loop() {
 //Helper functions
 void sendControlChange(byte command, byte value, byte channel) {
     if(setNewJoystick && hasJoystick) {
-        joystickControl[channel] = command;
-        joystickMidpoint[channel] = value;
+        //reset cc to from joystick to previous cc
+        MIDI.sendControlChange(joystickControl[stateNumber],joystickMidpoint[stateNumber],channel);
+
+        //set new cc to joystick
+        joystickControl[stateNumber] = command;
+        joystickMidpoint[stateNumber] = value;
         shortBlink(4); // swipe towards joystick (mine is on the left)
         setNewJoystick = false;
-    } else if (joystickControl[channel] == command) {
-        joystickMidpoint[channel] = value;
+        waitForJoystick = millis();
+    } else if (joystickControl[stateNumber] == command) {
+        joystickMidpoint[stateNumber] = value;
     }
 
     MIDI.sendControlChange(command,value,channel);
@@ -1765,7 +1751,7 @@ void sendControlChange(byte command, byte value, byte channel) {
     // Blink because knob is centered
     if (value == 64 && (command == 5 || command == 23 || command == 25 || command == 90 || command == 91|| command == 115)) {
         longBlink(0);
-    } else {
+    } else if(waitForJoystick && (millis() - waitForJoystick) > 1200) {
         stopBlinking();
     }
 }
@@ -1807,15 +1793,18 @@ void updateMidiChannelDisplay(int channel) {
     }
 }
 
-void switchMidiChannel() {
-    // Turn off notes for the current channel and increment the channel
+void turnOffAllNotes() {
     for (char n = 0; n < noteCount; n++) {
         if (notesPressed[n] == 1) {
             MIDI.sendNoteOff(keysLast + n, 0, midiChannel);
         }
         notesPressed[n] = 0;
     }
+}
 
+void switchMidiChannel() {
+    // Turn off notes for the current channel and increment the channel
+    turnOffAllNotes();
     // Increment or reset MIDI channel
     midiChannel = (midiChannel < layoutChannels[currentLayout]) ? midiChannel + 1 : 1;
 
