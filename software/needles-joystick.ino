@@ -1,12 +1,6 @@
 // Eurorack 1U Midi Keyboard & Controller for Mutable Instruments Yarns with Loom
 // Made on Loom version 2.7.1
 
-// Base by Ithai Benjamin January 2018
-// Loom changes by Dylan December 2020
-// Loom oscilattor update April 2021
-// Needles 2 with joystick update January 2024
-// RC / Layout update July 2024
-
 // Set hasJoystick to false if you don't have a joystick.
 // MaxMidi channels are handeld by midi and octave buttons.
 // Set rcChannel on yarns to 8.
@@ -18,7 +12,7 @@ Adafruit_MCP23017 mcpArray[3]; // mcpArray[0], mcpArray[1], mcpArray[2],
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 #define MIDI_ENABLE 1
-const boolean hasJoystick = true;
+const bool hasJoystick = true;
 
 // Octave leds
 const char octaveLed_array[14][7] = {
@@ -54,6 +48,38 @@ byte num_array[10][7] = {
     {0,0,0,1,1,1,1},  // seven
     {0,0,0,0,0,0,0},  // eight
     {0,0,0,0,1,0,0}  // nine
+};
+
+
+/*
+SEGMENTS - Need digitalwrite LOW to turn on. 0 is on 1 is off
+1     __A__    10
+     |     |
+2   F|     |B  9
+     |     |
+3     __G__    8
+     |     |
+4   E|     |C  7 --> + for DP
+     |     |
+5     __D__    6 -->DP
+
+A  B   C  D  E  F  G  DP
+1  10  8  5  4  2  3  6
+*/
+
+byte note_array[12][7] = {
+    {0,1,1,0,0,0,1},  // C
+    {0,1,1,0,0,0,1},  // C#
+    {0,0,0,0,0,0,1},  // D
+    {0,0,0,0,0,0,1},  // D#
+    {0,1,1,0,0,0,0},  // E
+    {0,1,1,1,0,0,0},  // F
+    {0,1,1,1,0,0,0},  // F#
+    {0,1,0,0,0,0,0},  // G
+    {0,1,0,0,0,0,0},  // G#
+    {0,0,0,1,0,0,0},  // A
+    {0,0,0,1,0,0,0},  // A#
+    {0,0,0,0,0,0,0}   // B
 };
 
 // segment display letters
@@ -92,46 +118,21 @@ byte letter_array[26][7] = {
     {1,0,0,0,0,0,1}   //spinning wheel end
 };
 
-/*
-SEGMENTS - Need digitalwrite LOW to turn on. 0 is on 1 is off
-1     __A__    10
-     |     |
-2   F|     |B  9
-     |     |
-3     __G__    8
-     |     |
-4   E|     |C  7 --> + for DP
-     |     |
-5     __D__    6 -->DP
 
-A  B   C  D  E  F  G  DP
-1  10  8  5  4  2  3  6
-*/
 
 // Segments
 #define onesAnode 7 // atmega - MIDI channel
 #define tensAnode 8 // atmega - Values
 #define tensDP 15 // Values DP // mcpArray[2]
-const int ones[7] = {0,1,2,3,4,5,6}; // mcpArray[2]
-const int tens[7] = {8,9,10,11,12,13,14}; // mcpArray[2]
-int segOnStart = 0; // tensAnode starts blank regardless of ccPot positions
-
-// segment cc display
-const byte arpLow[6]  = {3,25,51,76,102,123};
-const byte arpHigh[6] = {25,51,76,102,123,127};
-int rangeON = 0;
-int vibratoON = 0;
-int tuningON = 0;
-int speedON = 0;
-int fineTuneON = 0;
-int eucOnFill = 0;
-int eucOnRotate = 0;
+const byte ones[7] = {0,1,2,3,4,5,6}; // mcpArray[2]
+const byte tens[7] = {8,9,10,11,12,13,14}; // mcpArray[2]
+bool segOnStart = false; // tensAnode starts blank regardless of ccPot positions
 
 // clock division - using rest&slide+shift buttons
 const byte clockCCVal[10] = {15,26,36,48,58,68,80,90,100,112};
 const byte clockVal[10] = {2,3,4,6,8,2,6,2,3,4};
-const int clockNums = 10;
-int clockCounter = 0;
+const byte clockNums = 10;
+byte clockCounter = 0;
 
 // gate length. changes automatically with clock division
 const byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5};
@@ -140,11 +141,11 @@ const byte gateLengthVal[10] = {40,30,20,15,12,9,6,6,5,5};
 // LOOM only has 0-31 EC length
 const byte euclideanCCVal[32] = {0,4,8,12,16,20,25,29,33,37,41,45,49,53,57,61,66,70,74,78,82,86,90,94,98,102,107,111,115,119,123,127};
 const byte euclideanVal[32] = {0,1,2,3,4,5,6,7,8,9,1,1,2,3,4,5,6,7,8,9,2,1,2,3,4,5,6,7,8,9,3,1};  // 0-31 steps length;
-int euclideanCounter[4] = { 0,0,0,0 };
+byte euclideanCounter[4] = { 0,0,0,0 };
 
 // 4051 Mux for CC Pots:
 #define ccPin A0 // atmega
-const int ccPotChannels = 8;
+const byte ccPotChannels = 8;
 #define addressA 10
 #define addressB 11
 #define addressC 12
@@ -155,8 +156,8 @@ int C = 0; //Address pin C
 //Define CC Pots
 byte cc[] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte lastpot[] = {0, 0, 0, 0, 0, 0, 0, 0};
-const int potThreshold = 2; // threshold for potentiometer jitter
-const int joystickThreshold = 2; // threshold for joystick jitter was 1 see what works best
+const byte potThreshold = 2; // threshold for potentiometer jitter
+const byte joystickThreshold = 2; // threshold for joystick jitter was 1 see what works best
 
 //Define cc number of each pot
 byte midi_cc[] = {104, 105, 106, 25, 23, 21, 1, 5};
@@ -175,13 +176,13 @@ int stateNumber = -1; // midi channel number for states
 unsigned long currentTime = 0;
 unsigned long pressedMidi = 0;
 unsigned long releasedMidi = 0;
-boolean midiHold = false;
-boolean midiHoldReset = false;
+bool midiHold = false;
+bool midiHoldReset = false;
 
-int currentLayout = 1;
-byte layoutChannels[7] = {1,2,1,3,3,4,1};
-byte layoutCC[7] = {0,15,31,119,127,25,36};
-int rcChannel = 8;
+byte currentLayout = 1;
+const byte layoutChannels[7] = {1,2,1,3,3,4,1};
+const byte layoutCC[7] = {0,15,31,119,127,25,36};
+const byte rcChannel = 8;
 
 //128 is ignore cc for that channel
 const byte rc_cc[8][4] {
@@ -197,7 +198,7 @@ const byte rc_cc[8][4] {
 
 const byte shift_rc_cc[8] {1, 2, 3, 4, 77, 78, 79, 80};
 
-const int layoutLeds[7][7] {
+const bool layoutLeds[7][7] {
     {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},     // Mono         1M  - 0 - - -
     {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW},    // Dual mono    2M  - 0 - 0 -
     {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},    // Paraphonic   2P  0 0 - - -
@@ -213,23 +214,22 @@ unsigned long lastBlinkTime = 0;
 
 // step 7
 #define wholeNotePin 5 // atmega
-int wholeNoteState = 0;
-int wholeNoteLastState = 0;
+bool wholeNoteState = LOW;
+bool wholeNoteLastState = LOW;
 
 // step 3
 #define thirdNotePin 4 // atmega
-int thirdNoteState = 0;
-int thirdNoteLastState = 0;
+bool thirdNoteState = LOW;
+bool thirdNoteLastState = LOW;
 
 // Legato
 #define legatoPin 13 // atmega
-int legatoState = 0;
-int legatoLastState = 0;
-int legatoCurrentState = HIGH;
-int legatoStates[4] = { 0,0,0,0 };
+bool legatoState = LOW;
+bool legatoLastState = LOW;
+byte legatoStates[4] = { 0,0,0,0 };
 
 const byte responseVal[3] = {40,80,120};
-int responseStates[4] = { 0,0,0,0 };
+byte responseStates[4] = { 0,0,0,0 };
 
 // Legato LED
 #define legatoLed 3  // atmega
@@ -237,26 +237,26 @@ int responseStates[4] = { 0,0,0,0 };
 // Tie
 #define tiePin A2 // atmega
 #define tieChannel 112 // cc#
-int tieState = 0;
-int tieLastState = 0;
+int tieState = LOW;
+int tieLastState = LOW;
 
 // Rest
 #define restPin 6 // atmega
 #define restChannel 113 // #cc
-int restState = 0;
-int restLastState = 0;
+int restState = LOW;
+int restLastState = LOW;
 
 // Slide
 #define slidePin A1 // atmega
-int slideState = 0;
-int slideLastState = 0;
-int slideOn = 0;
-int pitchOn = 0;
+int slideState = LOW;
+int slideLastState = LOW;
+bool slideOn = false;
+bool pitchOn = false;
 
 // Shift
 #define shiftPin 5 // mcpArray[1]
 #define shiftLedPin 6 // mcpArray[1]
-int shiftState;
+int shiftState = LOW;
 int shiftLastState = LOW;
 int activeKey = LOW;
 unsigned long pressedShift = 0;
@@ -268,23 +268,23 @@ int extraState;
 int extraLastState = LOW;
 
 //loom states
-boolean strummStates[4] = { 0,0,0,0 };
-boolean loopStates[4] = { 0,0,0,0 };
-boolean stepStates[4] = { 0,0,0,0 };
-boolean arpStates[4] = { 0,0,0,0 };
-boolean eucStates[4] = { 0,0,0,0 };
-boolean holdStates[4] = { 0,0,0,0 };
-boolean oscMode[4] = { 0,0,0,0 };
-boolean oscEnv[4] = { 0,0,0,0 };
-boolean hasRecording[4] = { 0,0,0,0 };
-int lastPortamento[4] = { 0,0,0,0 };
+bool strummStates[4] = { 0,0,0,0 };
+bool loopStates[4] = { 0,0,0,0 };
+bool stepStates[4] = { 0,0,0,0 };
+bool arpStates[4] = { 0,0,0,0 };
+bool eucStates[4] = { 0,0,0,0 };
+bool holdStates[4] = { 0,0,0,0 };
+bool oscMode[4] = { 0,0,0,0 };
+bool oscEnv[4] = { 0,0,0,0 };
+bool hasRecording[4] = { 0,0,0,0 };
+byte lastPortamento[4] = { 0,0,0,0 };
 
 // 4 noise
 // 21 classic
 // 26 fm
 const byte modelStart[3] = {0, 11, 63};
-const byte modelEnd[3] = {10, 62, 128};
-int modelIndex[4] = { 0,0,0,0 }; // 0 = noise 1 = classic 2 = fm
+const byte modelEnd[3] = {10, 62, 127};
+byte modelIndex[4] = { 0,0,0,0 }; // 0 = noise 1 = classic 2 = fm
 
 //16 options
 //128/15 = 8.5333
@@ -305,31 +305,30 @@ int modelIndex[4] = { 0,0,0,0 }; // 0 = noise 1 = classic 2 = fm
 //13 1/5 = 103
 //14 1/7 = 111
 //15 2/5 = 120
-//16 2/7 = 128
-int cvAuxOutIndex[4] = { 0,0,0,0 };
+//16 2/7 = 127
+byte cvAuxOutIndex[4] = { 0,0,0,0 };
 const byte cvAuxOut[6] = {0,28,43,52,60,69};
 const byte cvAuxOutExternal[8] = {0,19,28,35,43,52,60,69};
-int cvAuxOutAltIndex[4] = { 0,0,0,0 };
+byte cvAuxOutAltIndex[4] = { 0,0,0,0 };
 const byte cvAuxOutAlt[7] = {77,86,94,103,111,118,127};
-int notePriorityVal[4] = { 0,0,0,0 };
+byte notePriorityVal[4] = { 0,0,0,0 };
 
-int isRecording = -1;
-int arpLedFix;
-int holdCheck = 0;
+byte isRecording = 8;
+bool arpLedFix = false;
+bool holdCheck = false;
 
 #define velocityJoystickPin 2 // atmega
 int velocityJoystickState = 0;
 int velocityJoystick = 1020;
 
 #define pitchBendPin 9 // atmega
-int pitchBendState = 0;
-int sliderLastMapped = 0;
+int pitchBendState = LOW;
+int sliderLastMapped = LOW;
 
 // Slider
 #define sliderPin A3 // atmega
 int sliderVal = 0;
-int sliderState = 0;
-int velocityMap = 0;
+byte velocityMap = 0;
 
 // Arp LED, Euc LED
 #define arpLed 2 // mcpArray[1]
@@ -346,10 +345,10 @@ int xtraValY = 0;
 int xtraValStateY = 0;
 
 // Important setting flash
-boolean isBlinking = false;
+bool isBlinking = false;
 unsigned long importantSettingStartTime;
-unsigned long importantBlinkDuration = 1000; // milliseconds
-const int animationFrames[7][3] {
+const unsigned long importantBlinkDuration = 1000; // milliseconds
+const byte animationFrames[7][3] {
     {11,12,4}, // centered
     {10,5,4}, // left swipe
     {9,3,4}, // right swipe
@@ -362,35 +361,32 @@ const int animationFrameTimes[2][4] {
     {250,400,500,750}, // fast
     {1050,1200,1400,1600}, // slow
 };
-int animationSpeed = 0;
-int animationType = 0;
-boolean animationBlink = false;
+byte animationSpeed = 0;
+byte animationType = 0;
+bool animationBlink = false;
 
 // Keyboard on mcp0+mcp1 pins:
-char notes[18] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};   //pin setup for 18 buttons (mcp1&2)
-boolean noteOn[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //button state
-boolean noteLast[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //last button state
-boolean notesPressed[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
-boolean notesPressedAll[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
-const int noteCount = 18;
+const byte notes[18] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};   //pin setup for 18 buttons (mcp1&2)
+bool noteOn[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //button state
+bool noteLast[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //last button state
+bool notesPressed[18] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //loom notes pressed
+const byte noteCount = 18;
 
 //Loom strumm keyboard
-unsigned long noteStrumDelay[4] = {5,5,5,5};
+byte noteStrumDelay[4] = {5,5,5,5};
 
-//CHECK: does this work?
-boolean setNewJoystick = false;
-boolean lockJoystick = false;
-boolean joystickActivity = false;
+bool setNewJoystick = false;
+bool lockJoystick = false;
+bool joystickActivity = false;
 
 unsigned long waitForJoystick = 0;
-int joystickLastState = 0;
-long joystickControl[4] = {104,104,104,104};
-long joystickMidpoint[4] = {0,0,0,0};
+byte joystickLastState = 0;
+byte joystickControl[4] = {104,104,104,104};
+int joystickMidpoint[4] = {0,0,0,0};
 
 int lastNoteStriked = -1; // Last note turned on
 
-//CHECK: chords
-const int chordTable[][4] = {
+const byte chordTable[16][4] = {
     {0},
     {0, 4, 7},          // Major 1
     {0, 3, 7},          // Minor 2
@@ -414,18 +410,27 @@ bool keysActive = false;         // True if any key is actively pressed
 
 long activeChord[4] = {0,0,0,0};
 long inversionState[4] = {0,0,0,0};
-int CHORD_TABLE_SIZE = sizeof(chordTable) / sizeof(chordTable[0]);
 
-int chordNumberDisplayed = 0;
+int nonMidiDisplayed = 0;
 
 unsigned long inversionPreviousMillis = 0;
 unsigned long inversionPauseMillis = 0;
 
 int inversionBlinkCount = 0;
-const int inversionBlinkTime = 500;
-const int inversionPauseDuration = 1000; // Pause after blinks in milliseconds
+const int inversionBlinkTime = 150;
+const int inversionPauseDuration = 500; // Pause after blinks in milliseconds
 bool inversionIsInPause = false;
-bool chordChanging = false;
+
+// Quantizer
+const bool predefinedQuantizers[5][12] = {
+    {1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1}, // Major Scale
+    {1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0}, // Minor Scale
+    {1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0}, // Whole Tone Scale
+    {1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0}, // Dorian Mode
+    {1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0}  // Pentatonic Scale
+};
+
+bool activeQuantizer[12] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}; // Default all notes active
 
 bool isMidiNoteOn = false;
 bool hasExternalController = false;
@@ -443,12 +448,12 @@ void handleNoteOff(byte channel, byte note, byte velocity) {
 // Octave keys
 char changePins[2] = {3,4}; // octave up/down mcpArray[1]
 char octaveChanges[3] = {12,-12,0}; //numbers for octave changing
-boolean changeButton[2] = {0,0};  //octave button state
-boolean changeButtonLast[2] = {0,0};  //last octave button state
+bool changeButton[2] = {0,0};  //octave button state
+bool changeButtonLast[2] = {0,0};  //last octave button state
 
-const int keysBase = 55;  //base for keyboard G2
-int keysLast = keysBase;  //last keyboard base state
-int changekeys(int a,int b){  //function to change key base
+const byte keysBase = 55;  //base for keyboard G2
+byte keysLast = keysBase;  //last keyboard base state
+byte changekeys(byte a,byte b){  //function to change key base
     keysLast=a+b;
     return(keysLast);
 }
@@ -553,7 +558,7 @@ void loop() {
     // Read velocity slider + joystick
     sliderVal = analogRead(sliderPin);
     velocityMap = map(velocityJoystick,0,1023,127,1); // for OSC slider; // velocity slider
-    int sliderMapped = map(sliderVal,0,1023,0,128); // for OSC slider
+    int sliderMapped = map(sliderVal,0,1023,0,127); // for OSC slider
     xtraValY = analogRead(xtraAnalogY);
     xtraValX = analogRead(xtraAnalogX);
 
@@ -566,7 +571,7 @@ void loop() {
         midiHold = false;
 
         // Reset pitch bend if necessary
-        if (pitchOn == 1) {
+        if (pitchOn) {
             resetPitchBend();
         }
 
@@ -780,64 +785,80 @@ void loop() {
         mcpArray[1].digitalWrite(10, (millis() / blinkInterval) % 2);
     }
 
-    if(loopStates[stateNumber] == 0 && stepStates[stateNumber] == 0 && arpLedFix == HIGH) {
+    if(loopStates[stateNumber] == 0 && stepStates[stateNumber] == 0 && arpLedFix) {
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
-        arpLedFix = LOW;
+        arpLedFix = false;
     }
 
     if(holdStates[stateNumber] == 1) {
         mcpArray[1].digitalWrite(shiftLedPin, (millis() / (blinkInterval/2)) % 2);
     } else {
-        holdCheck = 0;
+        holdCheck = false;
         for (int n=0; n < 4; n++){
             if(holdStates[n] == 1) {
-                holdCheck = 1;
+                holdCheck = true;
             }
         }
 
         mcpArray[1].digitalWrite(shiftLedPin, holdCheck);
     }
 
+
+    // Generate the current chord notes based on the selected chord and inversion
+    const byte* chord = chordTable[activeChord[stateNumber]];
+    
+    int chordSize = 0;
+
+    // Count the number of non-zero elements in the selected row
+    for (int i = 0; i < 4; i++) {
+        if (chordTable[activeChord[stateNumber]][i] != 0 || i == 0) {
+            chordSize++;
+        } else {
+            break; // Stop counting at the first zero (after the root)
+        }
+    }
+
+    // If current channel is paraphonice and the chord size is 4, change it to 3
+    if(currentLayout == 4 && midiChannel == 1 && chordSize == 4) {
+        chordSize = 3;
+    }
+
     // Loop for the 17-button keyboard
     for (char n = 0; n < noteCount; n++) {
         noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
 
-        // Generate the current chord notes based on the selected chord and inversion
-        const int* chord = chordTable[activeChord[stateNumber]];
-        int chordSize = sizeof(chordTable[activeChord[stateNumber]]) / sizeof(int);
         int chordNotes[4]; // Assuming max 4-note chords
         for (int i = 0; i < chordSize; i++) {
-            chordNotes[i] = keysLast + n + chord[(i + inversionState[stateNumber]) % chordSize];
+            chordNotes[i] = quantize(keysLast + n + chord[(i + inversionState[stateNumber]) % chordSize]);
         }
 
-        // MIDI Hold Mode
-        if (midiHold) {
+        //IDEA:
+        // When i midiHold is on
+        // I want to create a quantizer function where the first 5 buttons on the keyboard are predifined quantizers
+        // The next octave will be buttons to turn a note off in the current quantizer and the last button will be a reset button where all notes are turned back on.
+
+        if(midiHold) {
             if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
-                for (int i = 0; i < chordSize; i++) {
-                    for (int m = 0; m < layoutChannels[currentLayout]; m++) {
-                        MIDI.sendNoteOn(chordNotes[i], velocityMap, m + 1);
-                    }
+                  if (n < 5) {
+                    // select predifined quantizer
+                    selectQuantizer(n);
+                } else if (n == 17) {
+                    //reset all notes in quantizer
+                    resetQuantizer();
+                } else {
+                    //toggle note in quantizer
+                    toggleQuantizerNote(n - 5);
                 }
                 noteLast[n] = noteOn[n];
-                notesPressedAll[n] = 1;
                 notesPressed[n] = 1;
             }
 
             if (noteOn[n] == LOW && noteLast[n] != noteOn[n]) { // Key released
+  
                 noteLast[n] = noteOn[n];
-                if (notesPressed[n] == 1) {
-                    for (int i = 0; i < chordSize; i++) {
-                        for (int m = 0; m < layoutChannels[currentLayout]; m++) {
-                            MIDI.sendNoteOff(chordNotes[i], velocityMap, m + 1);
-                        }
-                    }
-                }
-                notesPressedAll[n] = 0;
                 notesPressed[n] = 0;
             }
-
-            // Strum Mode
         } else if (strummStates[stateNumber] == 1) {
             if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
                 // If a previous note is still active, turn it off first
@@ -853,6 +874,7 @@ void loop() {
                 // Strum the chord: play each note sequentially
                 for (int i = 0; i < chordSize - 1; i++) { 
                     MIDI.sendNoteOn(chordNotes[i], velocityMap, midiChannel); // Note ON
+                    noteDisplay(chordNotes[i]);
                     delay(noteStrumDelay[stateNumber]);                       // Delay
                     MIDI.sendNoteOff(chordNotes[i], velocityMap, midiChannel); // Note OFF
                     delay(noteStrumDelay[stateNumber]);                       // Delay
@@ -860,6 +882,7 @@ void loop() {
 
                 // Keep the last note ON
                 MIDI.sendNoteOn(chordNotes[chordSize - 1], velocityMap, midiChannel);
+                noteDisplay(chordNotes[chordSize - 1]);
                 noteLast[n] = noteOn[n]; // Update note state
             }
 
@@ -879,13 +902,14 @@ void loop() {
             if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
                 for (int i = 0; i < chordSize; i++) {
                     MIDI.sendNoteOn(chordNotes[i], velocityMap, midiChannel);
+                    noteDisplay(chordNotes[i]);
                 }
                 noteLast[n] = noteOn[n];
                 notesPressed[n] = 1;
 
-                if (slideOn == 1) {
+                if (slideOn) {
                     digitalWrite(tensAnode, HIGH);
-                    slideOn = 0;
+                    slideOn = false;
                 }
             }
 
@@ -1135,8 +1159,8 @@ void loop() {
             for (int f=0; f < 7; f++) {
                 mcpArray[2].digitalWrite(tens[f], letter_array[6][f]);
             }
-            slideOn = 1;
-            pitchOn = 1;
+            slideOn = true;
+            pitchOn = true;
 
             if(midiHold) {
                 for(int m=0;m<layoutChannels[currentLayout];m++){
@@ -1145,7 +1169,7 @@ void loop() {
             } else {
                 MIDI.sendPitchBend(8190,midiChannel); // 8192 on Channel 1
             }
-        } else if (restState == HIGH && shiftState == HIGH && pitchOn == 1) {
+        } else if (restState == HIGH && shiftState == HIGH && pitchOn) {
             if(midiHold) {
                 for(int m=0;m<layoutChannels[currentLayout];m++){
                     MIDI.sendPitchBend(0,m + 1); // 8192 on Channel 1
@@ -1153,7 +1177,7 @@ void loop() {
             } else {
                 MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
             }
-            pitchOn = 0;
+            pitchOn = false;
         } else if (restState == LOW && shiftState == LOW){
             stopBlinking();
             if (clockCounter < clockNums-1){
@@ -1195,8 +1219,8 @@ void loop() {
             for (int f=0; f < 7; f++) {
                 mcpArray[2].digitalWrite(tens[f], letter_array[6][f]);
             }
-            slideOn = 1;
-            pitchOn = 1;
+            slideOn = true;
+            pitchOn = true;
 
             if(midiHold) {
                 for(int m=0;m<layoutChannels[currentLayout];m++){
@@ -1205,7 +1229,7 @@ void loop() {
             } else {
                 MIDI.sendPitchBend(-8192,midiChannel); // 6000 on Channel 1
             }
-        } else if (slideState == HIGH && shiftState == HIGH && pitchOn == 1) {
+        } else if (slideState == HIGH && shiftState == HIGH && pitchOn) {
             if(midiHold) {
                 for(int m=0;m<layoutChannels[currentLayout];m++){
                     MIDI.sendPitchBend(0,m + 1); // 8192 on Channel 1
@@ -1213,7 +1237,7 @@ void loop() {
             } else {
                 MIDI.sendPitchBend(0,midiChannel); // 0 on Channel 1
             }
-            pitchOn = 0;
+            pitchOn = false;
         } else if (slideState == LOW && shiftState == LOW){
             stopBlinking();
             clockCounter = (clockCounter > 0) ? clockCounter - 1 : 0;
@@ -1249,7 +1273,7 @@ void loop() {
             } else {
                 stopBlinking();
             }
-            MIDI.sendControlChange(71,map(sliderMapped, 6, 128, modelStart[modelIndex[stateNumber]], modelEnd[modelIndex[stateNumber]]),midiChannel);
+            MIDI.sendControlChange(71,map(sliderMapped, 6, 127, modelStart[modelIndex[stateNumber]], modelEnd[modelIndex[stateNumber]]),midiChannel);
             if (oscMode[stateNumber] == 0) {
                 oscMode[stateNumber] = 1;
                 MIDI.sendControlChange(70, (oscEnv[stateNumber] == 0) ? 64 : 127, midiChannel);
@@ -1266,7 +1290,7 @@ void loop() {
         }
     } else if (sliderMapped != sliderLastMapped && shiftState == HIGH){
         //osc timbre initial if osc on otherwise lfo shape
-        boolean oscOn = (currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber] == 1;
+        bool oscOn = (currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber] == 1;
         sendControlChange(oscOn ? 82 : 95, sliderMapped, midiChannel);
         spinningShape(sliderMapped/8);
     }
@@ -1297,7 +1321,7 @@ void loop() {
             }
 
             if (abs(cc[0] - lastpot[0]) >= potThreshold && !midiHold) {
-                arpLedFix = HIGH;
+                arpLedFix = true;
 
                 if(cc[0] > 25) {
                     if(arpStates[stateNumber] == 0 && stepStates[stateNumber] == 0){
@@ -1309,10 +1333,10 @@ void loop() {
                             if (eucStates[stateNumber] == 1){
                                 eucStates[stateNumber] = 0;
                                 // euclidean steps to 0 to turn off euclidean
-                                MIDI.sendControlChange(107,0,midiChannel);
+                                sendControlChange(107,0,midiChannel);
                             } else {
                                 eucStates[stateNumber] = 1;
-                                MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[stateNumber]],midiChannel);
+                                sendControlChange(107,euclideanCCVal[euclideanCounter[stateNumber]],midiChannel);
                             }
                         }
 
@@ -1323,7 +1347,7 @@ void loop() {
                         }
                     } else if (stepStates[stateNumber] == 1 && eucStates[stateNumber] == 0) {
                         eucStates[stateNumber] = 1;
-                        MIDI.sendControlChange(107,euclideanCCVal[euclideanCounter[stateNumber]],midiChannel);
+                        sendControlChange(107,euclideanCCVal[euclideanCounter[stateNumber]],midiChannel);
                     }
                 } else {
                     if(arpStates[stateNumber] == 1 && stepStates[stateNumber] == 0){
@@ -1341,15 +1365,6 @@ void loop() {
             }
             shiftLastState = shiftState;
 
-            // for displaying on value segment
-            rangeON=cc[0];
-            vibratoON=cc[1]/13; // to get 0-9
-            speedON=cc[4]/13; // to get 0-9
-            tuningON=cc[5]/3.8; // to get 0-34
-            eucOnFill=cc[2]/3.9; // 0-32
-            eucOnRotate=cc[3]/3.9; // 0-32
-            chordChanging = false;
-
             if(midiHold && shiftState == HIGH) {
                 for (int n=0; n < 4; n++){
                     if (rc_cc[z][n] != 128) {
@@ -1365,16 +1380,16 @@ void loop() {
             } else if (midiHold && shiftState == LOW) {
                 //arp/seq division per channel
                 if (shift_rc_cc[z] == 1) {
-                    MIDI.sendControlChange(102,cc[0],1);
+                    sendControlChange(102,cc[0],1);
                 } else if (shift_rc_cc[z] == 2) {
-                    MIDI.sendControlChange(102,cc[1],2);
+                    sendControlChange(102,cc[1],2);
                 } else if (shift_rc_cc[z] == 3) {
-                    MIDI.sendControlChange(102,cc[2],3);
+                    sendControlChange(102,cc[2],3);
                 } else if (shift_rc_cc[z] == 4) {
-                    MIDI.sendControlChange(102,cc[2],4);
+                    sendControlChange(102,cc[2],4);
                 } else {
                     for(int m=0;m<layoutChannels[currentLayout];m++){
-                        MIDI.sendControlChange(shift_rc_cc[z],cc[z],m + 1);
+                        sendControlChange(shift_rc_cc[z],cc[z],m + 1);
 
                         if(oscMode[m + 1] == 0 && cvAuxOutIndex[m + 1] != 5) {
                             cvAuxOutIndex[m + 1] = 5;
@@ -1388,8 +1403,7 @@ void loop() {
                 if(shift_cc[z] == 74) {
                     //different scaling for hold pedal mode makes 0 not off but sustain
                     int holdMap = map(cc[z], 0, 127, 20, 127);
-                    MIDI.sendControlChange(shift_cc[z],holdMap,midiChannel);
-
+                    sendControlChange(shift_cc[z],holdMap,midiChannel);
                 } else if (shift_cc[z] == 25 && (loopStates[stateNumber] == 1 || arpStates[stateNumber] == 1 || stepStates[stateNumber] == 1)) {
                     //IF Loop / step / arp then change fine tune to clock division
                     sendControlChange(102,cc[z],midiChannel);
@@ -1413,11 +1427,7 @@ void loop() {
                     sendControlChange(shift_cc[z],cc[z],midiChannel);
                 }
 
-                if (shift_cc[z] == 27) {
-                    eucFill(tuningON);
-                } else {
-                    spinningShape(cc[z]/8);
-                }
+
             } else {
                 // NON shift pots functions
 
@@ -1459,30 +1469,13 @@ void loop() {
                     if((eucStates[stateNumber] == 1 && arpStates[stateNumber] == 1) || (stepStates[stateNumber] == 1 && eucStates[stateNumber] == 1)) {
                         sendControlChange(109,cc[z],midiChannel);
                     } else {
-                        //CHECK: does this change chords?
-                        int chordValue = map(cc[z], 0, 127, 0, 15);
-                        handleChordChange(chordValue, false);
-                        chordChanging = true;
+                        handleChordChange(map(cc[z], 0, 127, 0, 15));
                     }
                 } else {
                     sendControlChange(midi_cc[z],cc[z],midiChannel);
                     if (midi_cc[z] == 5) {
                         lastPortamento[stateNumber] = cc[z];
                     }
-                }
-
-                if(midi_cc[z] == 104) {
-                    arpRange(rangeON);
-                } else if (midi_cc[z] == 23){
-                    numberDisplay(speedON);
-                } else if (midi_cc[z] == 22){
-                    numberDisplay(vibratoON);
-                } else if (cc[3] == 109){
-                    eucFill(eucOnRotate);
-                } else if (cc[3] == 108){
-                    eucFill(eucOnFill);
-                } else if (!chordChanging) {
-                    spinningShape(cc[z]);
                 }
             }
             
@@ -1511,10 +1504,10 @@ void loop() {
     // XTRA button functions
     // shutdown recording if a channel is still recording
     if (extraState == LOW && extraState != extraLastState) {
-        if (isRecording > -1) {
+        if (isRecording < 8) {
             if (shiftState == HIGH) {
                 MIDI.sendControlChange(110,0,isRecording); // loom recording off
-                isRecording = -1;
+                isRecording = 8;
                 hasRecording[stateNumber] = 1;
             } else {
                 MIDI.sendControlChange(111,127,isRecording); // loom delete recording
@@ -1618,7 +1611,7 @@ void loop() {
             if (activeChord[stateNumber] != 0) {
                 //handle inversion
                 inversionState[stateNumber] = (inversionState[stateNumber] + 1) % 3;
-                handleChordChange(activeChord[stateNumber], true);
+                handleChordChange(activeChord[stateNumber]);
             } else if(strummStates[stateNumber] == 1) {
                 //panic button strumm
                 MIDI.sendControlChange(123,0,midiChannel);
@@ -1699,10 +1692,10 @@ void loop() {
         digitalWrite(legatoLed, LOW);
     }
 
-    if (segOnStart == 0){
+    if (!segOnStart){
         digitalWrite(tensAnode, HIGH);
         mcpArray[2].digitalWrite(tensDP, LOW);
-        segOnStart = 1;
+        segOnStart = true;
     }
 
     //loom hold
@@ -1800,9 +1793,9 @@ void loop() {
         midiChannel = 1;
     }
 
-    if(chordNumberDisplayed != 0 && millis() - chordNumberDisplayed > 4000) {
+    if(nonMidiDisplayed > 0 && millis() - nonMidiDisplayed > 2000) {
         updateMidiChannelDisplay(midiChannel);
-        chordNumberDisplayed = 0;
+        nonMidiDisplayed = 0;
     }
 
     stateNumber = midiChannel - 1;
@@ -1826,9 +1819,23 @@ void sendControlChange(byte command, byte value, byte channel) {
     }
 
     MIDI.sendControlChange(command,value,channel);
+             
+    if (command == 27) {
+        eucFill(value / 3.8);
+    }  else if(command == 104) {
+        numberDisplay(value / 25);
+    } else if (command == 23){
+        numberDisplay(value / 13);
+    } else if (command == 22){
+        numberDisplay(value / 13);
+    } else if (command == 109 || command == 108){
+        eucFill(value / 3.9);
+    } else {
+        spinningShape(value / 8);
+    }
 
     // Blink because knob is centered
-    if (value == 64 && (command == 5 || command == 23 || command == 25 || command == 90 || command == 91|| command == 115)) {
+    if (value == 64 && (command == 5 || command == 10 || command == 23 || command == 25 || command == 90 || command == 91|| command == 115)) {
         longBlink(0);
     } else if(waitForJoystick && (millis() - waitForJoystick) > 1200) {
         stopBlinking();
@@ -1844,31 +1851,22 @@ void sendControlRepeat(byte command, byte value, byte channel, byte repeat) {
     for (int f=0; f < 7; f++) {
         mcpArray[2].digitalWrite(tens[f], num_array[repeat][f]);
     }
-    slideOn = 1;
+    slideOn = true;
 }
 
 void resetPitchBend() {
     for (int m = 0; m < layoutChannels[currentLayout]; m++) {
         MIDI.sendPitchBend(0, m + 1); // Reset pitch bend to 8192 on all channels
     }
-    pitchOn = 0;
+    pitchOn = false;
 }
 
 void updateMidiChannelDisplay(int channel) {
+    digitalWrite(tensAnode, channel > 9 ? HIGH : LOW);
     // Update the ones place of the MIDI channel
-    for (int j = 0; j < 7; j++) {
-        mcpArray[2].digitalWrite(ones[j], num_array[channel][j]);
-    }
 
-    // Keep tensAnode off until MIDI channel gets to 10
-    if (channel > 9) {
-        digitalWrite(tensAnode, HIGH);
-        for (int j = 0; j < 7; j++) {
-            mcpArray[2].digitalWrite(tens[j], num_array[1][j]);
-        }
-    } else {
-        digitalWrite(tensAnode, HIGH);
-        mcpArray[2].digitalWrite(tensDP, HIGH);
+    for (int j = 0; j < 7; j++) {
+        mcpArray[2].digitalWrite(ones[j], num_array[channel % 10][j]);
     }
 }
 
@@ -1881,69 +1879,129 @@ void turnOffAllNotes() {
     }
 }
 
-void handleChordChange(int newChord, bool newChordIsInversion) {
-    numberDisplay(newChord);
-
-    if(newChord == 0) {
-        inversionState[stateNumber] = 0;
-    }
-
-    chordNumberDisplayed = millis();
+void handleChordChange(int newChord) {
+    // handle edge cases
+    newChord = constrain(newChord, 0, 15);
+    nonMidiDisplayed = millis();
     if(newChord > 8) {
         updateMidiChannelDisplay(4);
     } else if(newChord > 0) {
         updateMidiChannelDisplay(3);
     } else {
         updateMidiChannelDisplay(1);
+        inversionState[stateNumber] = 0;
     }
 
-    // Check if the chord selection has changed for this part
-    if (newChord != activeChord[stateNumber] || newChordIsInversion) {
+    if(newChord > 7) {
+        //4 note chords are displayed as 1-7
+        numberDisplay(newChord - 7);
+    } else {
+        // off is displayed as 0
+        //3 note chords are displayed as 1 to 7
+        numberDisplay(newChord);
+    }
+
+    activeChord[stateNumber] = newChord;
+
+    if (newChord != activeChord[stateNumber]) {
         // Update the chord state
         activeChord[stateNumber] = newChord;
 
         // Turn off any currently playing notes for this part
         for (int n = 0; n < noteCount; n++) {
-            if (notesPressedAll[n] || notesPressed[n]) {
-                const int* chord = chordTable[activeChord[stateNumber]];
+            if (notesPressed[n]) {
+                const byte* chord = chordTable[activeChord[stateNumber]];
                 int chordSize = 0;
-
-                // Determine the chord size dynamically
-                for (int i = 0; i < 4; i++) {
-                    if (chord[i] == 0 && i != 0) break; // Stop at unused slots
-                    chordSize++;
+                if (newChord > 0) { // Ignore "off" or empty chord
+                    for (int i = 0; i < 4; i++) {
+                        if (chord[i] == 0 && i != 0) break; // Stop at unused slots
+                        chordSize++;
+                    }
                 }
 
                 // Apply inversion logic (rotate the chord notes)
                 int invertedChord[4];
                 for (int i = 0; i < chordSize; i++) {
                     invertedChord[i] = chord[(i + inversionState[stateNumber]) % chordSize];
-                    if (i < inversionState) {
+                    if (i < inversionState[stateNumber]) {
                         invertedChord[i] += 12; // Shift to the next octave
                     }
                 }
 
                 // Send NoteOff for the current notes
                 for (int i = 0; i < chordSize; i++) {
-                    int chordNote = keysLast + n + invertedChord[i];
-                    MIDI.sendNoteOff(chordNote, velocityMap, midiChannel);
+                    int chordNote = keysLast + n;
+                    if (chordNote >= 0 && chordNote <= 127) {
+                        MIDI.sendNoteOff(chordNote, velocityMap, midiChannel);
+                    }
                 }
 
                 // Reset pressed notes
-                notesPressedAll[n] = 0;
                 notesPressed[n] = 0;
             }
         }
     }
 }
 
+
+// Quantizer functions
+void selectQuantizer(byte quantizerIndex) {
+    if (quantizerIndex >= 0 && quantizerIndex < 5) {
+        // Copy the selected quantizer into the activeQuantizer
+        for (int i = 0; i < 12; i++) {
+            activeQuantizer[i] = predefinedQuantizers[quantizerIndex][i];
+        }
+        numberDisplay(quantizerIndex + 1); // Show the selected quantizer
+    }
+}
+
+void toggleQuantizerNote(byte noteIndex) {
+    if (noteIndex >= 0 && noteIndex < 12) {
+        activeQuantizer[noteIndex] = !activeQuantizer[noteIndex]; // Toggle the note
+
+        nonMidiDisplayed = millis();
+        updateMidiChannelDisplay(activeQuantizer[noteIndex] ? 1 : 0);// show 1 or 0 for on or off
+        noteDisplay(noteIndex); //show the note
+    }
+}
+
+void resetQuantizer() {
+    for (int i = 0; i < 12; i++) {
+        activeQuantizer[i] = 1; // Enable all notes
+    }
+    
+    nonMidiDisplayed = millis();
+    updateMidiChannelDisplay(1);// show 1 to show all is on
+    shortBlink(0); // Blink because quantizer is reset
+    mcpArray[2].digitalWrite(tensDP, HIGH);
+}
+
+int quantize(int inputNote) {
+    int baseNote = inputNote % 12;
+    int octave = inputNote / 12;
+
+    // Find the closest active note in the scale
+    for (int i = 0; i < 12; i++) {
+        int upIndex = (baseNote + i) % 12;
+        int downIndex = (baseNote - i + 12) % 12;
+
+        if (activeQuantizer[upIndex]) return upIndex + (octave * 12);
+        if (activeQuantizer[downIndex]) return downIndex + (octave * 12);
+    }
+
+    return inputNote; // If no match (unlikely), return the input note
+}
+
+//End quantizer functions
+
 void switchMidiChannel() {
     // Turn off notes for the current channel and increment the channel
     turnOffAllNotes();
     // Increment or reset MIDI channel
     midiChannel = (midiChannel < layoutChannels[currentLayout]) ? midiChannel + 1 : 1;
-    chordNumberDisplayed = 0;
+    nonMidiDisplayed = 3000;
     // Update display with the new MIDI channel
+    mcpArray[2].digitalWrite(tensDP, HIGH);
     updateMidiChannelDisplay(midiChannel);
 }
 
@@ -2000,18 +2058,6 @@ void stopBlinking() {
 }
 
 //SEGMENT FUNCTIONS
-void arpRange(int value2){
-    mcpArray[2].digitalWrite(tensDP, HIGH);
-    for (int j=0; j < 5; j++) {
-        if (value2 > arpLow[j] && value2 < arpHigh[j]){
-            digitalWrite(tensAnode, LOW);
-            for (int n=0; n < 7; n++){
-                mcpArray[2].digitalWrite(tens[n], num_array[j][n]);
-            }
-        }
-    }
-}
-
 void eucFill(int value9){
     numberDisplay(value9);
 
@@ -2036,6 +2082,23 @@ void transposeShape(int value10){
     for (int n=0; n < 7; n++){
         mcpArray[2].digitalWrite(tens[n], letter_array[value10+16][n]);
     }
+}
+
+void noteDisplay(int noteValue) {
+    // Display the note value on the segment display
+    byte noteIndex = noteValue % 12;
+    digitalWrite(tensAnode, LOW);
+    for (int n=0; n < 7; n++){
+        mcpArray[2].digitalWrite(tens[n], note_array[noteIndex][n]);
+    }
+
+    // Turn off the decimal point for notes that don't have a sharp
+    if (noteIndex == 1 || noteIndex == 3 || noteIndex == 6 || noteIndex == 8 || noteIndex == 10) {
+        mcpArray[2].digitalWrite(tensDP, LOW);
+    } else {
+        mcpArray[2].digitalWrite(tensDP, HIGH);
+    }
+
 }
 
 //general spinning wheel for shift pots
