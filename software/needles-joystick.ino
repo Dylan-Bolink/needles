@@ -372,15 +372,11 @@ bool noteOn[noteCount] = {0}; //button state
 bool noteLast[noteCount] = {0}; //last button state
 bool noteMidiLast[noteCount] = {0}; //last button state
 
-// int lastStrummedNote = -1;
-// unsigned long strumPreviousMillis = 0;
-// int strumStep = 0;                           // Current strum step
-// bool strumming = false;                      // Whether strumming is active
-// bool noteOnPhase = true;  
-
 //Loom strumm keyboard
-byte noteStrumDelay[4] = {5,5,5,5};
+const byte minimumDelay = 2;
+byte noteStrumDelay[4] = {0};
 
+//strum millis start
 struct StrumState {
     bool strumming;
     byte baseNote;
@@ -393,6 +389,7 @@ struct StrumState {
 StrumState strumStates[MAX_POLYPHONY];
 byte activeNotes[MAX_POLYPHONY];
 int activeNoteCount = 0;
+//strum millis end
 
 bool setNewJoystick = false;
 bool lockJoystick = false;
@@ -404,6 +401,7 @@ byte joystickControl[4] = {104,104,104,104};
 int joystickMidpoint[4] = {0};
 
 int lastNoteStriked = -1; // Last note turned on
+byte lastChordNote = 0;
 
 const byte chordTable[16][4] = {
     {0},
@@ -873,7 +871,7 @@ void loop() {
             if(strummStates[stateNumber]) {
                 if (noteOn[n] == LOW && lastNoteStriked == n) { // Key released
                     // Turn off the last note of the chord
-                    byte note = quantize(keysLast + n, currentChordSize - 1);
+                    byte note = quantize(keysLast + n, lastChordNote);
                     MIDI.sendNoteOff(note, velocityMap, midiChannel);
                     lastNoteStriked = -1;
                     noteLast[n] = noteOn[n];
@@ -1397,7 +1395,6 @@ void loop() {
                 }
             } else {
                 // NON shift pots functions
-
                 if(loopStates[stateNumber] && midi_cc[z] == 105) {
                     //change DIR to phase for loopmode
                     sendControlChange(115,cc[z],midiChannel);
@@ -1412,7 +1409,7 @@ void loop() {
                     sendControlChange(27,cc[z],midiChannel);
                 } else if(midi_cc[z] == 5 && strummStates[stateNumber]) {
                     // block portamento in strumm mode
-                    noteStrumDelay[stateNumber] = cc[z] + 5; //5 is the minimum delay
+                    noteStrumDelay[stateNumber] = cc[z];
                 } else if(z == 0) {
                     if(cc[z] > 25) {
                         sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
@@ -1576,7 +1573,7 @@ void loop() {
             if (activeChord[stateNumber] != 0) {
                 //handle inversion
                 handleInversionChange((inversionState[stateNumber] + 1) % 3);
-            } else if(strummStates[stateNumber] == 1) {
+            } else if(strummStates[stateNumber]) {
                 //panic button strumm
                 MIDI.sendControlChange(123,0,midiChannel);
                 lastNoteStriked = -1;
@@ -1834,6 +1831,7 @@ void updateMidiChannelDisplay(int channel) {
 }
 
 // Strum Mode Handler
+// Work in progress. this doesnt work...
 void handleStrummingNote(byte n) {
     if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
         if (activeNoteCount < MAX_POLYPHONY) {
@@ -1967,7 +1965,6 @@ void turnOffAllNotes(bool force = false) {
 
 void applyNewNotes() {
     for (char n = 0; n < noteCount; n++) {
-        // Reapply the new chord notes
         if (noteOn[n] == HIGH && noteLast[n] == noteOn[n]) { // Check if the key is currently pressed
             handleNewNote(n);
         }
@@ -1976,29 +1973,44 @@ void applyNewNotes() {
 
 void handleNewNote(byte newNote) {
     currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
-    if(strummStates[stateNumber]) {
-        //CHECK: does millis way work well?
-        // handleStrummingNote(newNote);
-        
+    if(strummStates[stateNumber]){ 
         if (lastNoteStriked != -1) {
-            for (int c = 0; c < currentChordSize; c++) {
-                byte note = quantize(keysLast + lastNoteStriked, c);
-                MIDI.sendNoteOff(note, velocityMap, midiChannel);
-            }
-            delay(noteStrumDelay[stateNumber]);
+            byte note = quantize(keysLast + lastNoteStriked, lastChordNote);
+            MIDI.sendNoteOff(note, velocityMap, midiChannel);
+            delay(minimumDelay);
         }
 
         lastNoteStriked = newNote;
+    }
+
+    if(strummStates[stateNumber] && noteStrumDelay[stateNumber] < 64) {
+        const byte delayTime = (noteStrumDelay[stateNumber] * 3) + minimumDelay;
 
         // Strum the chord: play each note sequentially
         for (int c = 0; c < currentChordSize; c++) { 
             byte note = quantize(keysLast + newNote, c);
             MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
             noteDisplay(note);
-            delay(noteStrumDelay[stateNumber]);                     // Delay
-            if(c < currentChordSize - 1){                           
+            delay(delayTime);                                       // Delay
+            lastChordNote = c;
+            if(c < currentChordSize - 1) {                           
                 MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
-                delay(noteStrumDelay[stateNumber]);                 // Delay
+                delay(delayTime);                                   // Delay
+            }
+        }
+    } else if(strummStates[stateNumber]) {
+        const byte delayTime = (abs(noteStrumDelay[stateNumber] - 127) * 3) + minimumDelay;
+
+        // Reverse strum the chord: play each note sequentially
+        for (int c = currentChordSize - 1; c >= 0; c--) { 
+            byte note = quantize(keysLast + newNote, c);
+            MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
+            noteDisplay(note);
+            delay(delayTime);                                       // Delay
+            lastChordNote = c;
+            if(c > 0) {                                            
+                MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
+                delay(delayTime);                                   // Delay
             }
         }
     } else {
@@ -2109,6 +2121,9 @@ void toggleStrummMode() {
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         strummStates[stateNumber] = true;
+
+        //reset to sharpest delay
+        noteStrumDelay[stateNumber] = 0;
 
         // Center portamento and turn off arp mode
         MIDI.sendControlChange(5, 0, midiChannel);
