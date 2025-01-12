@@ -1,5 +1,5 @@
 // Eurorack 1U Midi Keyboard & Controller for Mutable Instruments Yarns with Loom
-// Made on Loom version 2.7.1
+// Made on Loom version 2.8
 
 // Set hasJoystick to false if you don't have a joystick.
 // MaxMidi channels are handeld by midi and octave buttons.
@@ -180,8 +180,8 @@ bool midiHold = false;
 bool midiHoldReset = false;
 
 byte currentLayout = 1;
-const byte layoutChannels[7] = {1,2,1,3,3,4,1};
-const byte layoutCC[7] = {0,15,31,119,127,25,36};
+const byte layoutChannels[8] = {1,2,1,2,3,3,4,1};
+const byte layoutCC[8] = {0,8,24,127,111,119,16,32};
 const byte rcChannel = 8;
 
 //128 is ignore cc for that channel
@@ -198,14 +198,15 @@ const byte rc_cc[8][4] {
 
 const byte shift_rc_cc[8] {1, 2, 3, 4, 77, 78, 79, 80};
 
-const bool layoutLeds[7][7] {
-    {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},     // Mono         1M  - 0 - - -
-    {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW},    // Dual mono    2M  - 0 - 0 -
-    {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},    // Paraphonic   2P  0 0 - - -
-    {HIGH,HIGH,LOW,HIGH,LOW,HIGH,LOW},  // Poly 2 mono  *2  X - 0 - 0 
-    {LOW,HIGH,LOW,HIGH,LOW,HIGH,LOW},   // 3 mono       3M  0 - 0 - 0
-    {LOW,HIGH,HIGH,LOW,HIGH,HIGH,LOW},  // 4 mono       4M  0 0 - 0 0
-    {LOW,HIGH,HIGH,HIGH,HIGH,LOW,LOW}   // 4 chord      4P  0 0 0 0 -
+const bool layoutLeds[8][7] {
+    {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},     // Mono         1M  - 0 - - - 0
+    {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW},    // Dual mono    2M  - 0 - 0 - 8
+    {LOW,HIGH,HIGH,LOW,LOW,LOW,LOW},    // Paraphonic   2P  0 0 - - - 24
+    {HIGH,HIGH,LOW,LOW,LOW,HIGH,LOW},   // Poly 1 mono  *1  X - - - 0 127
+    {HIGH,HIGH,LOW,HIGH,LOW,HIGH,LOW},  // Poly 2 mono  *2  X - 0 - 0 111
+    {LOW,HIGH,LOW,HIGH,LOW,HIGH,LOW},   // 3 mono       3M  0 - 0 - 0 119
+    {LOW,HIGH,HIGH,LOW,HIGH,HIGH,LOW},  // 4 mono       4M  0 0 - 0 0 16
+    {LOW,HIGH,HIGH,HIGH,HIGH,LOW,LOW}   // 4 chord      4P  0 0 0 0 - 32
 };
 
 const long blinkInterval = 200; //set blink led speed
@@ -250,7 +251,7 @@ int restLastState = LOW;
 #define slidePin A1 // atmega
 int slideState = LOW;
 int slideLastState = LOW;
-bool slideOn = false;
+// bool slideOn = false;
 bool pitchOn = false;
 
 // Shift
@@ -374,7 +375,7 @@ bool noteMidiLast[noteCount] = {0}; //last button state
 
 //Loom strumm keyboard
 const byte minimumDelay = 2;
-byte noteStrumDelay[4] = {0};
+byte noteStrumDelay[4] = {64,64,64,64};
 
 //strum millis start
 struct StrumState {
@@ -727,7 +728,7 @@ void loop() {
     //Loom octave seq switcher
     // if midi key is held and octave button is pressed
     if (midiHold && changeButton[0] == HIGH &&changeButtonLast[0] != changeButton[0]){
-        currentLayout = (currentLayout + 1) % 7;
+        currentLayout = (currentLayout + 1) % 8;
 
         for(int m=0;m<4;m++){
             holdStates[m] = false;
@@ -770,7 +771,7 @@ void loop() {
             holdStates[m] = false;
             MIDI.sendControlChange(64,0,m + 1);
         }
-        currentLayout = (currentLayout - 1 + 7) % 7;
+        currentLayout = (currentLayout - 1 + 8) % 8;
 
         MIDI.sendControlChange(1,layoutCC[currentLayout],rcChannel);
         if(midiChannel > layoutChannels[currentLayout]) {
@@ -862,11 +863,11 @@ void loop() {
             //Handle new note strumm is done in function
             handleNewNote(n);
             noteLast[n] = noteOn[n]; // Update note state
-
-            if (slideOn && !strummStates[stateNumber]) {
-                digitalWrite(tensAnode, HIGH);
-                slideOn = false;
-            }
+            //CHECK: does this work for display bug?
+            // if (slideOn && !strummStates[stateNumber]) {
+            //     digitalWrite(tensAnode, HIGH);
+            //     slideOn = false;
+            // }
         } else if (noteLast[n] != noteOn[n]) {
             if(strummStates[stateNumber]) {
                 if (noteOn[n] == LOW && lastNoteStriked == n) { // Key released
@@ -965,20 +966,39 @@ void loop() {
                 mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[stateNumber]]%10][b]);
             }
         }
-    } else if ((oscMode[stateNumber]) || (currentLayout == 4 && midiChannel == 1)) {
+    } else if ((oscMode[stateNumber]) || (currentLayout == 3 && midiChannel == 1) || (currentLayout == 4 && midiChannel == 1)) {
         //3 changes drone to env
-        if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
-            oscEnv[stateNumber] = !oscEnv[stateNumber];
-            MIDI.sendControlChange(70, oscEnv[stateNumber] ? 127 : 70, midiChannel);
-        }
-
-        if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
-            modelIndex[stateNumber] = (modelIndex[stateNumber] + 1) % 3;
-            if (modelIndex[stateNumber] == 0) {
-                shortBlink(0); // blink because model is on 0 noise
+        if(shiftState == LOW){
+            if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
+                cvAuxOutAltIndex[stateNumber] = (cvAuxOutAltIndex[stateNumber] + 1) % 7;
+                for(int m=0;m<layoutChannels[currentLayout];m++){
+                    MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[stateNumber]],m + 1);
+                }
             }
-            //7 changes model
-            MIDI.sendControlChange(71,modelStart[modelIndex[stateNumber]],midiChannel);
+
+            if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
+                cvAuxOutIndex[stateNumber] = (cvAuxOutIndex[stateNumber] + 1) % (hasExternalController ? 7 : 5);
+                if (hasExternalController) {
+                    MIDI.sendControlChange(31,cvAuxOutExternal[cvAuxOutIndex[stateNumber]],midiChannel);
+                } else {
+                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[stateNumber]],midiChannel);
+                }
+            }
+        } else {
+            if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
+                oscEnv[stateNumber] = !oscEnv[stateNumber];
+                const byte droneValue = (currentLayout == 3 && midiChannel == 1) || (currentLayout == 4 && midiChannel == 1) ? 0 : 70;
+                MIDI.sendControlChange(70, oscEnv[stateNumber] ? 127 : droneValue, midiChannel);
+            }
+
+            if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
+                modelIndex[stateNumber] = (modelIndex[stateNumber] + 1) % 3;
+                if (modelIndex[stateNumber] == 0) {
+                    shortBlink(0); // blink because model is on 0 noise
+                }
+                //7 changes model
+                MIDI.sendControlChange(71,modelStart[modelIndex[stateNumber]],midiChannel);
+            }
         }
     } else if (midiHold) {
         //3 is advance 7 is back. shift is cv aux out no shift is fm ratio?
@@ -986,15 +1006,21 @@ void loop() {
         if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
             if (shiftState == LOW) {
                 cvAuxOutAltIndex[stateNumber] = 0;
-                cvAuxOutIndex[stateNumber] = (cvAuxOutIndex[stateNumber] + 1) % 6;
-                for(int m=0;m<layoutChannels[currentLayout];m++){
-                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[stateNumber]],m + 1);
+                cvAuxOutIndex[stateNumber] = (cvAuxOutIndex[stateNumber] + 1) % (hasExternalController ? 7 : 5);
+                if (hasExternalController) {
+                    MIDI.sendControlChange(31,cvAuxOutExternal[cvAuxOutIndex[stateNumber]],midiChannel);
+                } else {
+                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[stateNumber]],midiChannel);
                 }
             } else {
                 cvAuxOutIndex[stateNumber] = 0;
                 cvAuxOutAltIndex[stateNumber] = (cvAuxOutAltIndex[stateNumber] + 1) % 7;
                 for(int m=0;m<layoutChannels[currentLayout];m++){
                     MIDI.sendControlChange(31,cvAuxOutAlt[cvAuxOutAltIndex[stateNumber]],m + 1);
+                }
+
+                if(cvAuxOutAltIndex[stateNumber] == 0){
+                    shortBlink(0); // blink because 1/1 ratio
                 }
             }
         }
@@ -1003,9 +1029,11 @@ void loop() {
         if (thirdNoteState != thirdNoteLastState && thirdNoteState == LOW) {
             if (shiftState == LOW) {
                 cvAuxOutAltIndex[stateNumber] = 0;
-                cvAuxOutIndex[stateNumber] = (cvAuxOutIndex[stateNumber] > 0) ? (cvAuxOutIndex[stateNumber] - 1) : 5;
-                for(int m=0;m<layoutChannels[currentLayout];m++){
-                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[stateNumber]],m + 1);
+                cvAuxOutIndex[stateNumber] = (cvAuxOutIndex[stateNumber] > 0) ? (cvAuxOutIndex[stateNumber] - 1) : (hasExternalController ? 7 : 5);
+                if (hasExternalController) {
+                    MIDI.sendControlChange(31,cvAuxOutExternal[cvAuxOutIndex[stateNumber]],midiChannel);
+                } else {
+                    MIDI.sendControlChange(31,cvAuxOut[cvAuxOutIndex[stateNumber]],midiChannel);
                 }
             } else {
                 cvAuxOutIndex[stateNumber] = 0;
@@ -1126,7 +1154,7 @@ void loop() {
             for (int f=0; f < 7; f++) {
                 mcpArray[2].digitalWrite(tens[f], letter_array[6][f]);
             }
-            slideOn = true;
+            // slideOn = true;
             pitchOn = true;
 
             if(midiHold) {
@@ -1186,7 +1214,7 @@ void loop() {
             for (int f=0; f < 7; f++) {
                 mcpArray[2].digitalWrite(tens[f], letter_array[6][f]);
             }
-            slideOn = true;
+            // slideOn = true;
             pitchOn = true;
 
             if(midiHold) {
@@ -1234,12 +1262,15 @@ void loop() {
 
     if (sliderMapped != sliderLastMapped && shiftState == LOW){
         //loom if lower then toggle osc mode and shift
-        if (sliderMapped > 5) {
+        if(midiChannel == 1 && (currentLayout == 3 || currentLayout == 4)){
+            MIDI.sendControlChange(71,map(sliderMapped, 0, 127, modelStart[modelIndex[stateNumber]], modelEnd[modelIndex[stateNumber]]),midiChannel);
+        } else if (sliderMapped > 5) {
             if (sliderMapped < 10) {
                 longBlink(0);  // Blink because first osc type
             } else {
                 stopBlinking();
             }
+
             MIDI.sendControlChange(71,map(sliderMapped, 6, 127, modelStart[modelIndex[stateNumber]], modelEnd[modelIndex[stateNumber]]),midiChannel);
             if (!oscMode[stateNumber]) {
                 oscMode[stateNumber] = true;
@@ -1257,7 +1288,7 @@ void loop() {
         }
     } else if (sliderMapped != sliderLastMapped && shiftState == HIGH){
         //osc timbre initial if osc on otherwise lfo shape
-        bool oscOn = (currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber];
+        bool oscOn = (currentLayout == 3 && midiChannel == 1) || (currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber];
         sendControlChange(oscOn ? 82 : 95, sliderMapped, midiChannel);
         spinningShape(sliderMapped/8);
     }
@@ -1377,10 +1408,10 @@ void loop() {
                 } else if(shift_cc[z] == 27 && (loopStates[stateNumber] || arpStates[stateNumber] || stepStates[stateNumber])) {
                     //IF Loop / step / arp then change fine tune to gate length
                     sendControlChange(103,cc[z],midiChannel);
-                } else if (shift_cc[z] == 25 && (oscMode[stateNumber] == 1 || (currentLayout == 4 && midiChannel == 1))) {
+                } else if (shift_cc[z] == 25 && (oscMode[stateNumber] == 1 || (currentLayout == 3 && midiChannel == 1) || (currentLayout == 4 && midiChannel == 1))) {
                     //IF OSC ON this changes LFO MOD
                     sendControlChange(83,cc[z],midiChannel);
-                } else if(shift_cc[z] == 27 && (oscMode[stateNumber] == 1 || (currentLayout == 4 && midiChannel == 1) )) {
+                } else if(shift_cc[z] == 27 && (oscMode[stateNumber] == 1 || (currentLayout == 3 && midiChannel == 1) || (currentLayout == 4 && midiChannel == 1) )) {
                     //IF OSC ON this changes ENV MOD
                     sendControlChange(90,cc[z],midiChannel);
                 } else if(shift_cc[z] == 77 || shift_cc[z] == 78 || shift_cc[z] == 79 || shift_cc[z] == 80) {
@@ -1410,6 +1441,12 @@ void loop() {
                 } else if(midi_cc[z] == 5 && strummStates[stateNumber]) {
                     // block portamento in strumm mode
                     noteStrumDelay[stateNumber] = cc[z];
+
+                    if(cc[z] == 64) {
+                        longBlink(0); //blink because fastest strum
+                    } else {
+                        stopBlinking();
+                    }
                 } else if(z == 0) {
                     if(cc[z] > 25) {
                         sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
@@ -1811,7 +1848,7 @@ void sendControlRepeat(byte command, byte value, byte channel, byte repeat) {
     for (int f=0; f < 7; f++) {
         mcpArray[2].digitalWrite(tens[f], num_array[repeat][f]);
     }
-    slideOn = true;
+    // slideOn = true;
 }
 
 void resetPitchBend() {
@@ -1832,63 +1869,63 @@ void updateMidiChannelDisplay(int channel) {
 
 // Strum Mode Handler
 // Work in progress. this doesnt work...
-void handleStrummingNote(byte n) {
-    if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
-        if (activeNoteCount < MAX_POLYPHONY) {
-            // Add new note to active list
-            int index = activeNoteCount++;
-            activeNotes[index] = n;
-            strumStates[index] = { true, n, 0, true, millis() };
-        }
-        noteLast[n] = noteOn[n];
-    }
+// void handleStrummingNote(byte n) {
+//     if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) { // Key pressed
+//         if (activeNoteCount < MAX_POLYPHONY) {
+//             // Add new note to active list
+//             int index = activeNoteCount++;
+//             activeNotes[index] = n;
+//             strumStates[index] = { true, n, 0, true, millis() };
+//         }
+//         noteLast[n] = noteOn[n];
+//     }
 
-    for (int i = 0; i < activeNoteCount; i++) {
-        StrumState &state = strumStates[i];
-        byte baseNote = state.baseNote;
+//     for (int i = 0; i < activeNoteCount; i++) {
+//         StrumState &state = strumStates[i];
+//         byte baseNote = state.baseNote;
 
-        if (state.strumming) {
-            unsigned long currentMillis = millis();
+//         if (state.strumming) {
+//             unsigned long currentMillis = millis();
             
-            currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
-            byte note = quantize(baseNote + keysLast, state.strumStep); // Quantize base + step
+//             currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
+//             byte note = quantize(baseNote + keysLast, state.strumStep); // Quantize base + step
 
-            if (state.noteOnPhase) { // Note On phase
-                if (currentMillis - state.strumPreviousMillis >= noteStrumDelay[stateNumber]) {
-                    MIDI.sendNoteOn(note, velocityMap, midiChannel);
-                    noteDisplay(note);
-                    state.strumPreviousMillis = currentMillis;
-                    state.noteOnPhase = false;
-                }
-            } else if (state.strumStep < currentChordSize) { // Note Off phase and next step
-                if (currentMillis - state.strumPreviousMillis >= noteStrumDelay[stateNumber]) {
-                    MIDI.sendNoteOff(note, velocityMap, midiChannel);
-                    state.strumPreviousMillis = currentMillis;
-                    state.strumStep++;
-                    state.noteOnPhase = true;
-                }
-            }
+//             if (state.noteOnPhase) { // Note On phase
+//                 if (currentMillis - state.strumPreviousMillis >= noteStrumDelay[stateNumber]) {
+//                     MIDI.sendNoteOn(note, velocityMap, midiChannel);
+//                     noteDisplay(note);
+//                     state.strumPreviousMillis = currentMillis;
+//                     state.noteOnPhase = false;
+//                 }
+//             } else if (state.strumStep < currentChordSize) { // Note Off phase and next step
+//                 if (currentMillis - state.strumPreviousMillis >= noteStrumDelay[stateNumber]) {
+//                     MIDI.sendNoteOff(note, velocityMap, midiChannel);
+//                     state.strumPreviousMillis = currentMillis;
+//                     state.strumStep++;
+//                     state.noteOnPhase = true;
+//                 }
+//             }
 
-            if (state.strumStep >= currentChordSize) { // Chord finished
-                state.strumming = false;
-            }
-        }
+//             if (state.strumStep >= currentChordSize) { // Chord finished
+//                 state.strumming = false;
+//             }
+//         }
 
-        if (noteOn[baseNote] == LOW && noteLast[baseNote] != noteOn[baseNote]) { // Note released
-            byte finalNote = quantize(baseNote + keysLast, currentChordSize - 1);
-            MIDI.sendNoteOff(finalNote, velocityMap, midiChannel);
-            noteLast[baseNote] = noteOn[baseNote];
+//         if (noteOn[baseNote] == LOW && noteLast[baseNote] != noteOn[baseNote]) { // Note released
+//             byte finalNote = quantize(baseNote + keysLast, currentChordSize - 1);
+//             MIDI.sendNoteOff(finalNote, velocityMap, midiChannel);
+//             noteLast[baseNote] = noteOn[baseNote];
 
-            // Remove note from active list
-            for (int j = i; j < activeNoteCount - 1; j++) {
-                activeNotes[j] = activeNotes[j + 1];
-                strumStates[j] = strumStates[j + 1];
-            }
-            activeNoteCount--;
-            i--; // Adjust index after removal
-        }
-    }
-}
+//             // Remove note from active list
+//             for (int j = i; j < activeNoteCount - 1; j++) {
+//                 activeNotes[j] = activeNotes[j + 1];
+//                 strumStates[j] = strumStates[j + 1];
+//             }
+//             activeNoteCount--;
+//             i--; // Adjust index after removal
+//         }
+//     }
+// }
 
 byte calculateChordSize(byte* chord) {
     byte size = 0;
@@ -1897,7 +1934,7 @@ byte calculateChordSize(byte* chord) {
     }
 
     //force maximum of 3 notes for paraphonic part
-    if(currentLayout == 4 && midiChannel == 1 && size == 4) {
+    if((currentLayout == 3 || currentLayout == 4) && midiChannel == 1 && size == 4) {
         size = 3;
     }
 
@@ -1984,24 +2021,9 @@ void handleNewNote(byte newNote) {
     }
 
     if(strummStates[stateNumber] && noteStrumDelay[stateNumber] < 64) {
-        const byte delayTime = (noteStrumDelay[stateNumber] * 3) + minimumDelay;
+        const byte delayTime = ((64 - noteStrumDelay[stateNumber]) * 3) + minimumDelay;
 
-        // Strum the chord: play each note sequentially
-        for (int c = 0; c < currentChordSize; c++) { 
-            byte note = quantize(keysLast + newNote, c);
-            MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
-            noteDisplay(note);
-            delay(delayTime);                                       // Delay
-            lastChordNote = c;
-            if(c < currentChordSize - 1) {                           
-                MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
-                delay(delayTime);                                   // Delay
-            }
-        }
-    } else if(strummStates[stateNumber]) {
-        const byte delayTime = (abs(noteStrumDelay[stateNumber] - 127) * 3) + minimumDelay;
-
-        // Reverse strum the chord: play each note sequentially
+        // Reverse strum the chord: play each note sequentially end on root note
         for (int c = currentChordSize - 1; c >= 0; c--) { 
             byte note = quantize(keysLast + newNote, c);
             MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
@@ -2013,11 +2035,28 @@ void handleNewNote(byte newNote) {
                 delay(delayTime);                                   // Delay
             }
         }
+    } else if(strummStates[stateNumber]) {
+        const byte delayTime = ((abs(noteStrumDelay[stateNumber] - 64)) * 3) + minimumDelay;
+
+        // Strum the chord: play each note sequentially end on last chord note
+        for (int c = 0; c < currentChordSize; c++) { 
+            byte note = quantize(keysLast + newNote, c);
+            MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
+            noteDisplay(note);
+            delay(delayTime);                                       // Delay
+            lastChordNote = c;
+            if(c < currentChordSize - 1) {                           
+                MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
+                delay(delayTime);                                   // Delay
+            }
+        }
     } else {
         for (byte c = 0; c < currentChordSize; c++) {
             byte note = quantize(keysLast + newNote, c);
             MIDI.sendNoteOn(note, velocityMap, midiChannel);
-            noteDisplay(note);
+            if (c == 0) {
+                noteDisplay(note);
+            }
         }
     }
 }
@@ -2123,7 +2162,7 @@ void toggleStrummMode() {
         strummStates[stateNumber] = true;
 
         //reset to sharpest delay
-        noteStrumDelay[stateNumber] = 0;
+        noteStrumDelay[stateNumber] = 64;
 
         // Center portamento and turn off arp mode
         MIDI.sendControlChange(5, 0, midiChannel);
@@ -2201,7 +2240,6 @@ void noteDisplay(int noteValue) {
     } else {
         mcpArray[2].digitalWrite(tensDP, HIGH);
     }
-
 }
 
 //general spinning wheel for shift pots
