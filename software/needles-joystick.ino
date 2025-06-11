@@ -398,6 +398,7 @@ bool joystickActivity = false;
 
 unsigned long waitForJoystick = 0;
 byte joystickLastState = 0;
+int joystickMidpoint[4] = {0};
 
 int lastNoteStriked = -1; // Last note turned on
 byte lastChordNote = 0;
@@ -452,7 +453,6 @@ struct UserSettings {
     byte currentLayout;
     bool activeQuantizer[12] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}; // Default all notes active
     byte joystickControl[4] = {104,104,104,104};
-    int joystickMidpoint[4] = {0};
     uint16_t checksum; // data integrity check
 };
 
@@ -630,9 +630,9 @@ void loop() {
                 if (settings.joystickControl[stateNumber] > 0)  { 
                     int midpoint = xtraValY - 510;
                     if (midpoint > 0) {
-                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, 510, settings.joystickMidpoint[stateNumber], 0), midiChannel);
+                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, 510, joystickMidpoint[stateNumber], 0), midiChannel);
                     } else if(midpoint > -510) {
-                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, -510, settings.joystickMidpoint[stateNumber], 127), midiChannel);
+                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, -510, joystickMidpoint[stateNumber], 127), midiChannel);
                     }
                 }
             } else if(velocityJoystickState==LOW) {
@@ -660,9 +660,9 @@ void loop() {
                 if (settings.joystickControl[stateNumber] > 0)  { 
                     int midpoint = xtraValX - 510;
                     if (midpoint > 0) {
-                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, 510, settings.joystickMidpoint[stateNumber], 127), midiChannel);
+                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, 510, joystickMidpoint[stateNumber], 127), midiChannel);
                     } else {
-                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, -510, settings.joystickMidpoint[stateNumber], 0), midiChannel);
+                        MIDI.sendControlChange(settings.joystickControl[stateNumber], map(midpoint, 0, -510, joystickMidpoint[stateNumber], 0), midiChannel);
                     }
                 }
             } else {
@@ -1813,18 +1813,17 @@ void loop() {
 void sendControlChange(byte command, byte value, byte channel) {
     if(setNewJoystick && hasJoystick) {
         //reset cc to from joystick to previous cc
-        MIDI.sendControlChange(settings.joystickControl[stateNumber],settings.joystickMidpoint[stateNumber],channel);
+        MIDI.sendControlChange(settings.joystickControl[stateNumber], joystickMidpoint[stateNumber],channel);
 
         //set new cc to joystick
         settings.joystickControl[stateNumber] = command;
-        settings.joystickMidpoint[stateNumber] = value;
+        joystickMidpoint[stateNumber] = value;
         shortBlink(4); // swipe towards joystick (mine is on the left)
         setNewJoystick = false;
         waitForJoystick = millis();
         markSettingsChanged();
     } else if (settings.joystickControl[stateNumber] == command) {
-        settings.joystickMidpoint[stateNumber] = value;
-        markSettingsChanged();
+        joystickMidpoint[stateNumber] = value;
     }
 
     MIDI.sendControlChange(command,value,channel);
@@ -2124,6 +2123,9 @@ void toggleStrummMode() {
 
         // Center portamento and turn off arp mode
         MIDI.sendControlChange(5, 64, midiChannel);
+        if(settings.joystickControl[stateNumber] == 5) {
+            joystickMidpoint[stateNumber] = 64;
+        }
         if (arpStates[stateNumber]) {
             arpStates[stateNumber] = false;
             MIDI.sendControlChange(114, 0, midiChannel);
