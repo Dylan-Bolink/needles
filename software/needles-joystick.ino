@@ -101,13 +101,6 @@ byte letter_array[26][7] = {
     {1,1,0,0,0,0,0}, // burst 13
     {1,1,1,0,0,0,0}, // t - for trigger velocity scale  14
     {1,0,0,0,0,0,1}, // v 15
-    // {1,1,1,1,1,1,0}, // off 16
-    // {0,1,0,0,1,0,0}, // saw 17
-    // {0,0,0,1,0,0,1}, // 25% rect 18
-    // {1,1,0,0,0,1,0}, // square 19
-    // {1,1,1,0,0,0,0}, // tri 20
-    // {1,0,1,1,0,1,0}, // sine 21
-    // {0,0,0,0,0,0,0},  // noise 22
     {0,1,1,0,1,1,1},  // transpose 16
     {0,0,0,1,0,0,0},  // replace 17
     {0,0,0,0,0,0,1},  // direct 18
@@ -118,8 +111,6 @@ byte letter_array[26][7] = {
     {0,0,0,0,0,1,1},
     {1,0,0,0,0,0,1}   //spinning wheel end
 };
-
-
 
 // Segments
 #define onesAnode 7 // atmega - MIDI channel
@@ -179,6 +170,7 @@ unsigned long pressedMidi = 0;
 unsigned long releasedMidi = 0;
 bool midiHold = false;
 bool midiHoldReset = false;
+bool initStartup = true;
 
 const byte layoutChannels[8] = {1,2,1,2,3,3,4,1};
 const byte layoutCC[8] = {0,8,24,127,111,119,16,32};
@@ -196,8 +188,6 @@ const byte rc_cc[8][4] {
     {10,42,74,106}      // Portamento
 };
 
-const byte shift_rc_cc[8] {1, 2, 3, 4, 77, 78, 79, 80};
-
 const bool layoutLeds[8][7] {
     {LOW,LOW,HIGH,LOW,LOW,LOW,LOW},     // Mono         1M  - 0 - - - 0
     {LOW,LOW,HIGH,LOW,HIGH,LOW,LOW},    // Dual mono    2M  - 0 - 0 - 8
@@ -210,8 +200,6 @@ const bool layoutLeds[8][7] {
 };
 
 const long blinkInterval = 200; //set blink led speed
-const long pauseInterval = 800;
-unsigned long lastBlinkTime = 0;
 
 // step 7
 #define wholeNotePin 5 // atmega
@@ -277,8 +265,6 @@ bool holdStates[4] = {false};
 bool oscMode[4] = {false};
 bool oscEnv[4] = {false};
 bool hasRecording[4] = {false};
-//try if its nicer to leave the feature out
-// byte lastPortamento[4] = {130, 130, 130, 130};
 
 // 4 noise
 // 21 classic
@@ -286,6 +272,7 @@ bool hasRecording[4] = {false};
 const byte modelStart[3] = {0, 11, 63};
 const byte modelEnd[3] = {10, 62, 127};
 byte modelIndex[4] = {0}; // 0 = noise 1 = classic 2 = fm
+bool oscOn = false;
 
 //16 options
 //128/15 = 8.5333
@@ -348,7 +335,6 @@ int xtraValStateY = 0;
 // Important setting flash
 bool isBlinking = false;
 unsigned long importantSettingStartTime;
-const unsigned long importantBlinkDuration = 1000; // milliseconds
 const byte animationFrames[7][3] {
     {11,12,4}, // centered
     {10,5,4}, // left swipe
@@ -596,12 +582,14 @@ void loop() {
     xtraValY = analogRead(xtraAnalogY);
     xtraValX = analogRead(xtraAnalogX);
 
+    oscOn = (settings.currentLayout == 3 && midiChannel == 1) || (settings.currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber];
+
     // Choose midi channel and display
     if (MidiButtonState == LOW && MidiButtonLastState == HIGH) {
-        pressedMidi = millis();
+        pressedMidi = currentTime;
         midiHold = true;
     } else if (MidiButtonState == HIGH && MidiButtonLastState == LOW) {
-        releasedMidi = millis();
+        releasedMidi = currentTime;
         midiHold = false;
 
         // Reset pitch bend if necessary
@@ -725,13 +713,7 @@ void loop() {
             changekeys(octaveChanges[i],keysLast);
 
             // light up correct octave led
-            for (int j=0; j < 9; j++) {
-                if (keysLast == octaveNote_array[j]){
-                    for (int n=0; n < 7; n++){
-                        mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[j][n]);
-                    }
-                }
-            }
+            resetOctaveLeds();
         }
     }
     //end octave switch
@@ -819,26 +801,20 @@ void loop() {
 
     //Mode state leds
     if(strummStates[stateNumber]) {
-        mcpArray[1].digitalWrite(arpLed, (millis() / (blinkInterval/2)) % 2);
-        mcpArray[2].digitalWrite(euclidean, (millis() / (blinkInterval/2)) % 2);
-    }
-
-    if(loopStates[stateNumber] && !isBlinking) {
-        mcpArray[1].digitalWrite(15, (millis() / blinkInterval) % 2);
-    }
-
-    if(stepStates[stateNumber] && !isBlinking) {
-        mcpArray[1].digitalWrite(10, (millis() / blinkInterval) % 2);
-    }
-
-    if(!loopStates[stateNumber] && !stepStates[stateNumber] && arpLedFix) {
+        mcpArray[1].digitalWrite(arpLed, (currentTime / (blinkInterval/2)) % 2);
+        mcpArray[2].digitalWrite(euclidean, (currentTime / (blinkInterval/2)) % 2);
+    }else if(loopStates[stateNumber] && !isBlinking) {
+        mcpArray[1].digitalWrite(15, (currentTime / blinkInterval) % 2);
+    } else if(stepStates[stateNumber] && !isBlinking) {
+        mcpArray[1].digitalWrite(10, (currentTime / blinkInterval) % 2);
+    } else if(!loopStates[stateNumber] && !stepStates[stateNumber] && arpLedFix) {
         mcpArray[1].digitalWrite(15, 0);
         mcpArray[1].digitalWrite(10, 0);
         arpLedFix = false;
     }
 
     if(holdStates[stateNumber]) {
-        mcpArray[1].digitalWrite(shiftLedPin, (millis() / (blinkInterval/2)) % 2);
+        mcpArray[1].digitalWrite(shiftLedPin, (currentTime / (blinkInterval/2)) % 2);
     } else {
         holdCheck = false;
         for (int n=0; n < 4; n++){
@@ -976,7 +952,7 @@ void loop() {
                 mcpArray[2].digitalWrite(tens[b], num_array[euclideanVal[euclideanCounter[stateNumber]]%10][b]);
             }
         }
-    } else if ((oscMode[stateNumber]) || (settings.currentLayout == 3 && midiChannel == 1) || (settings.currentLayout == 4 && midiChannel == 1)) {
+    } else if (oscOn) {
         //3 changes drone to env
         if(shiftState == LOW){
             if (wholeNoteState != wholeNoteLastState && wholeNoteState == LOW) {
@@ -1296,7 +1272,6 @@ void loop() {
         }
     } else if (sliderMapped != sliderLastMapped && shiftState == HIGH){
         //osc timbre initial if osc on otherwise lfo shape
-        bool oscOn = (settings.currentLayout == 3 && midiChannel == 1) || (settings.currentLayout == 4 && midiChannel == 1) || oscMode[stateNumber];
         sendControlChange(oscOn ? 82 : 95, sliderMapped, midiChannel);
         spinningShape(sliderMapped/8);
     }
@@ -1316,7 +1291,7 @@ void loop() {
 
         cc[z] = map(analogRead(A0), 0, 1023, 0, 127); // old method was  analogRead(A0)/ 8   // to get 0-127
 
-        if(midiChannel == 0) {
+        if(initStartup) {
             lastpot[z] = cc[z];
         }
 
@@ -1367,9 +1342,11 @@ void loop() {
             }
             shiftLastState = shiftState;
 
-            if(midiHold && shiftState == HIGH) {
+            if(midiHold) {
                 for (int n=0; n < 4; n++){
-                    if (rc_cc[z][n] != 128) {
+                    // Skips sending if the CC is 128
+                    // Skips portamento CC(10) and strum is active
+                    if (rc_cc[z][n] != 128 && !(rc_cc[z][n] == 10 && strummStates[n])) {
                         MIDI.sendControlChange(rc_cc[z][n],cc[z],rcChannel);
                     }
                 }
@@ -1378,26 +1355,6 @@ void loop() {
                     longBlink(0); //blink because portamento is centered
                 } else {
                     stopBlinking();
-                }
-            } else if (midiHold && shiftState == LOW) {
-                //arp/seq division per channel
-                if (shift_rc_cc[z] == 1) {
-                    sendControlChange(102,cc[0],1);
-                } else if (shift_rc_cc[z] == 2) {
-                    sendControlChange(102,cc[1],2);
-                } else if (shift_rc_cc[z] == 3) {
-                    sendControlChange(102,cc[2],3);
-                } else if (shift_rc_cc[z] == 4) {
-                    sendControlChange(102,cc[2],4);
-                } else {
-                    for(int m=0;m<layoutChannels[settings.currentLayout];m++){
-                        sendControlChange(shift_rc_cc[z],cc[z],m + 1);
-
-                        if(!oscMode[m + 1] && cvAuxOutIndex[m + 1] != 5) {
-                            cvAuxOutIndex[m + 1] = 5;
-                            MIDI.sendControlChange(31,69,m + 1);
-                        }
-                    }
                 }
             } else if(shift_cc[z] > 0 && shiftState == LOW){
                 // SHIFT pots functions
@@ -1412,10 +1369,10 @@ void loop() {
                 } else if(shift_cc[z] == 27 && (loopStates[stateNumber] || arpStates[stateNumber] || stepStates[stateNumber])) {
                     //IF Loop / step / arp then change fine tune to gate length
                     sendControlChange(103,cc[z],midiChannel);
-                } else if (shift_cc[z] == 25 && (oscMode[stateNumber] == 1 || (settings.currentLayout == 3 && midiChannel == 1) || (settings.currentLayout == 4 && midiChannel == 1))) {
+                } else if (shift_cc[z] == 25 && oscOn) {
                     //IF OSC ON this changes LFO MOD
                     sendControlChange(83,cc[z],midiChannel);
-                } else if(shift_cc[z] == 27 && (oscMode[stateNumber] == 1 || (settings.currentLayout == 3 && midiChannel == 1) || (settings.currentLayout == 4 && midiChannel == 1) )) {
+                } else if(shift_cc[z] == 27 && oscOn) {
                     //IF OSC ON this changes ENV MOD
                     sendControlChange(90,cc[z],midiChannel);
                 } else if(shift_cc[z] == 77 || shift_cc[z] == 78 || shift_cc[z] == 79 || shift_cc[z] == 80) {
@@ -1430,16 +1387,34 @@ void loop() {
                 }
             } else {
                 // NON shift pots functions
-                if(loopStates[stateNumber] && midi_cc[z] == 105) {
+                if(z == 0) {
+                    if(cc[z] > 25) {
+                        sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
+                        if(stepStates[stateNumber]) {
+                            eucStates[stateNumber] = true;
+                        }
+                    }
+                } else if(midi_cc[z] == 105 && loopStates[stateNumber]) {
                     //change DIR to phase for loopmode
                     sendControlChange(115,cc[z],midiChannel);
-                } else if(loopStates[stateNumber] && midi_cc[z] == 106) {
-                    //change PAT to length for loopmode
-                    sendControlChange(84,cc[z],midiChannel);
                 } else if (midi_cc[z] == 105 && !arpStates[stateNumber]) {
                     //IF not manual and no osc then non-shift to shift cc
                     sendControlChange(25,cc[z],midiChannel);
-                } else if(midi_cc[z] == 106 && !arpStates[stateNumber] && !eucStates[stateNumber]) {
+                } else if(midi_cc[z] == 106 && loopStates[stateNumber]) {
+                    //change PAT to length for loopmode
+                    sendControlChange(84,cc[z],midiChannel);
+                } else if(midi_cc[z] == 106 && ((eucStates[stateNumber] && arpStates[stateNumber]) || (stepStates[stateNumber] && eucStates[stateNumber]))){ 
+                    // if cc2 is "pattern" change cc2 to euclidean fill and cc3 to euclidean rotate
+                    sendControlChange(108,cc[z],midiChannel);
+                } else if(midi_cc[z] == 106 && arpStates[stateNumber]){
+                    const int correctedArpPattern = map(cc[z], 0, 127, 127,0);
+                    sendControlChange(midi_cc[z], correctedArpPattern, midiChannel);
+                    if ((correctedArpPattern < 92 && correctedArpPattern > 88) && hasRecording[stateNumber]) {
+                        longBlink(0); //blink because P1 Pattern
+                    } else {
+                        stopBlinking();
+                    }
+                } else if(midi_cc[z] == 106) {
                     //IF not manual an no osc then non-shift to shift cc
                     sendControlChange(27,cc[z],midiChannel);
                 } else if(midi_cc[z] == 5 && strummStates[stateNumber]) {
@@ -1451,23 +1426,6 @@ void loop() {
                     } else {
                         stopBlinking();
                     }
-                } else if(z == 0) {
-                    if(cc[z] > 25) {
-                        sendControlChange(midi_cc[z],round((cc[z]-25)*1.24),midiChannel);
-                        if(stepStates[stateNumber]) {
-                            eucStates[stateNumber] = true;
-                        }
-                    }
-                } else if(midi_cc[z] == 106 && ((eucStates[stateNumber] && arpStates[stateNumber]) || (stepStates[stateNumber] && eucStates[stateNumber]))){ // if cc2 is "pattern" change cc2 to euclidean fill and cc3 to euclidean rotate
-                    sendControlChange(108,cc[z],midiChannel);
-                } else if(midi_cc[z] == 106 && arpStates[stateNumber]){
-                    const int correctedArpPattern = map(cc[z], 0, 127, 127,0);
-                    sendControlChange(midi_cc[z], correctedArpPattern, midiChannel);
-                    if ((correctedArpPattern < 92 && correctedArpPattern > 88) && hasRecording[stateNumber]) {
-                        longBlink(0); //blink because P1 Pattern
-                    } else {
-                        stopBlinking();
-                    }
                 } else if (z == 3){
                     if((eucStates[stateNumber] && arpStates[stateNumber]) || (stepStates[stateNumber] && eucStates[stateNumber])) {
                         sendControlChange(109,cc[z],midiChannel);
@@ -1476,9 +1434,6 @@ void loop() {
                     }
                 } else {
                     sendControlChange(midi_cc[z],cc[z],midiChannel);
-                    // if (midi_cc[z] == 5) {
-                    //     lastPortamento[stateNumber] = cc[z];
-                    // }
                 }
             }
             
@@ -1498,7 +1453,7 @@ void loop() {
         mcpArray[2].digitalWrite(euclidean, eucStates[stateNumber] ? HIGH : LOW);
     } else if (stepStates[stateNumber] && eucStates[stateNumber]){
         mcpArray[1].digitalWrite(arpLed, LOW);
-        mcpArray[2].digitalWrite(euclidean, ((millis() + 200) / blinkInterval ) % 2);
+        mcpArray[2].digitalWrite(euclidean, ((currentTime + 200) / blinkInterval ) % 2);
     } else if (!strummStates[stateNumber]) {
         mcpArray[1].digitalWrite(arpLed, LOW);
         mcpArray[2].digitalWrite(euclidean, LOW);
@@ -1537,7 +1492,7 @@ void loop() {
                 MIDI.sendControlChange(19,notePriorityVal[stateNumber],m + 1);
                 notePriorityVal[m + 1] = notePriorityVal[stateNumber];
             }
-        } else if (stepStates[stateNumber] || loopStates[stateNumber] == 1) {
+        } else if (stepStates[stateNumber] || loopStates[stateNumber]) {
             if (shiftState == HIGH) {
                 isRecording = midiChannel;
                 MIDI.sendControlChange(110,127,midiChannel); // loom recording on
@@ -1655,22 +1610,20 @@ void loop() {
 
     if(activeChord[stateNumber] != 0) {
         // inversion leds
-
-        unsigned long currentMillis = millis();
         if (inversionState[stateNumber] == 0) {
             // No inversion: LED off
             digitalWrite(legatoLed, LOW);
             inversionIsInPause = false; // Ensure no pause
         } else if (inversionIsInPause) {
             // Pause logic
-            if (currentMillis - inversionPauseMillis >= inversionPauseDuration) {
+            if (currentTime - inversionPauseMillis >= inversionPauseDuration) {
                 inversionIsInPause = false; // End the pause
                 inversionBlinkCount = 0; // Reset blink count
             }
         } else {
             // Blinking logic for inversions
-            if (currentMillis - inversionPreviousMillis >= inversionBlinkTime) {
-                inversionPreviousMillis = currentMillis;
+            if (currentTime - inversionPreviousMillis >= inversionBlinkTime) {
+                inversionPreviousMillis = currentTime;
                 if (inversionBlinkCount < inversionState[stateNumber]) {
                     // Toggle LED on and off
                     digitalWrite(legatoLed, !digitalRead(legatoLed));
@@ -1680,7 +1633,7 @@ void loop() {
                 } else {
                     // Start pause after completing blinks
                     inversionIsInPause = true;
-                    inversionPauseMillis = currentMillis;
+                    inversionPauseMillis = currentTime;
                     digitalWrite(legatoLed, LOW); // Ensure LED is off during pause
                 }
             }
@@ -1689,7 +1642,7 @@ void loop() {
     } else if((legatoStates[stateNumber] == 2 && !strummStates[stateNumber])) {
         digitalWrite(legatoLed, HIGH);
     } else if((legatoStates[stateNumber] == 1 && !strummStates[stateNumber])) {
-        digitalWrite(legatoLed, (millis() / (blinkInterval/2)) % 2);
+        digitalWrite(legatoLed, (currentTime / (blinkInterval/2)) % 2);
     } else {
         digitalWrite(legatoLed, LOW);
     }
@@ -1702,9 +1655,9 @@ void loop() {
 
     //loom hold
     if(shiftState == LOW && shiftLastState == HIGH) {
-        pressedShift = millis();
+        pressedShift = currentTime;
     } else if(shiftState == HIGH && shiftLastState == LOW) {
-        releasedShift = millis();
+        releasedShift = currentTime;
 
         if((releasedShift - pressedShift) < 300) {
             if(midiHold) {
@@ -1749,17 +1702,11 @@ void loop() {
         }
         midiHoldReset = true;
     } else if(midiHoldReset && !midiHold && !isBlinking) {
-        for (int j=0; j < 9; j++) {
-            if (keysLast == octaveNote_array[j]){
-                for (int n=0; n < 7; n++){
-                    mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[j][n]);
-                }
-            }
-        } 
+        resetOctaveLeds();
         midiHoldReset = false;
     }
     
-    if (isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][3]) {
+    if (isBlinking && currentTime - importantSettingStartTime >= animationFrameTimes[animationSpeed][3]) {
         isBlinking = false;
         // set octave leds back to current octave
         for (int j=0; j < 9; j++) {
@@ -1770,37 +1717,61 @@ void loop() {
             }
         } 
     //alays end animation with short all off 13 == all of
-    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][2])) {
+    } else if ((isBlinking && currentTime - importantSettingStartTime >= animationFrameTimes[animationSpeed][2])) {
         for (int n=0; n < 7; n++){
             mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[13][n]);
         }
 
     //frame 2
-    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][1]) ) {
+    } else if ((isBlinking && currentTime - importantSettingStartTime >= animationFrameTimes[animationSpeed][1]) ) {
         for (int n=0; n < 7; n++){
             mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][2])][n]);
         }
     //frame 1
-    } else if ((isBlinking && millis() - importantSettingStartTime >= animationFrameTimes[animationSpeed][0])) {
+    } else if ((isBlinking && currentTime - importantSettingStartTime >= animationFrameTimes[animationSpeed][0])) {
         for (int n=0; n < 7; n++){
             mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][1])][n]);
         }
     }
 
     // First bootup ignore everything then set to midichannel 1
-    if (midiChannel == 0){
+    if (midiChannel == 0 && initStartup){
         for (int j=0; j < 7; j++) {
             mcpArray[2].digitalWrite(ones[j], num_array[1][j]);
         }
         midiChannel = 1;
+        importantSettingStartTime = currentTime;
 
         // load settings from EEPROM and apply layout
         loadSettingsFromEEPROM();
+        // Show the current layout on the leds
+        for (int n=0; n < 7; n++){
+            mcpArray[1].digitalWrite(ledPins[n], layoutLeds[settings.currentLayout][n]);
+        }
         delay(100); // wait for settings to load
-        MIDI.sendControlChange(1,layoutCC[settings.currentLayout],rcChannel);        
+        MIDI.sendControlChange(1,layoutCC[settings.currentLayout],rcChannel);
+    } else if(initStartup == true && currentTime - importantSettingStartTime > 5000) {
+        initStartup = false;
+        resetOctaveLeds();
+    } else if(initStartup == true) {
+        //check if there is any quantization
+        // all values in activeQuantizer are 1
+        bool hasQuantization = false;
+        for (int i = 0; i < 12; i++) {
+            if (settings.activeQuantizer[i] == 0) {
+                hasQuantization = true;
+                break;
+            }
+        }
+        //blink leds if there is no quantization
+        if(hasQuantization){
+            for (int n=0; n < 7; n++){
+                mcpArray[1].digitalWrite(ledPins[n], (layoutLeds[settings.currentLayout][n] && (currentTime / blinkInterval) % 2));
+            }
+        }
     }
 
-    if(millis() - nonMidiDisplayed > 2000) {
+    if(currentTime - nonMidiDisplayed > 2000) {
         updateMidiChannelDisplay(midiChannel);
     }
 
@@ -1820,7 +1791,7 @@ void sendControlChange(byte command, byte value, byte channel) {
         joystickMidpoint[stateNumber] = value;
         shortBlink(4); // swipe towards joystick (mine is on the left)
         setNewJoystick = false;
-        waitForJoystick = millis();
+        waitForJoystick = currentTime;
         markSettingsChanged();
     } else if (settings.joystickControl[stateNumber] == command) {
         joystickMidpoint[stateNumber] = value;
@@ -1845,7 +1816,7 @@ void sendControlChange(byte command, byte value, byte channel) {
     // Blink because knob is centered
     if (value == 64 && (command == 5 || command == 10 || command == 23 || command == 25 || command == 90 || command == 91|| command == 115)) {
         longBlink(0);
-    } else if(waitForJoystick && (millis() - waitForJoystick) > 1200) {
+    } else if(waitForJoystick && (currentTime - waitForJoystick) > 1200) {
         stopBlinking();
     }
 }
@@ -1889,7 +1860,7 @@ byte calculateChordSize(byte* chord) {
 void handleChordChange(byte newChord) {
     // handle edge cases
     newChord = constrain(newChord, 0, 15);
-    nonMidiDisplayed = millis();
+    nonMidiDisplayed = currentTime;
     if(newChord > 8) {
         updateMidiChannelDisplay(4);
     } else if(newChord > 0) {
@@ -2013,7 +1984,6 @@ void selectQuantizer(byte quantizerIndex) {
 
         // Copy the selected quantizer into the activeQuantizer
         for (int i = 0; i < 12; i++) {
-            // activeQuantizer[i] = predefinedQuantizers[quantizerIndex][i];
             settings.activeQuantizer[i] = predefinedQuantizers[quantizerIndex][i];
         }
         
@@ -2027,11 +1997,9 @@ void selectQuantizer(byte quantizerIndex) {
 void toggleQuantizerNote(byte noteIndex) {
     if (noteIndex >= 0 && noteIndex < 12) {
         turnOffAllNotes(false);
-        // activeQuantizer[noteIndex] = !activeQuantizer[noteIndex]; // Toggle the note
         settings.activeQuantizer[noteIndex] = !settings.activeQuantizer[noteIndex]; // Toggle the note
     
-
-        nonMidiDisplayed = millis();
+        nonMidiDisplayed = currentTime;
         updateMidiChannelDisplay(settings.activeQuantizer[noteIndex] ? 1 : 0);// show 1 or 0 for on or off
         
         applyNewNotes();
@@ -2043,7 +2011,6 @@ void toggleQuantizerNote(byte noteIndex) {
 void resetQuantizer() {
     turnOffAllNotes(false);
     for (int i = 0; i < 12; i++) {
-        // activeQuantizer[i] = 1; // Enable all notes
         settings.activeQuantizer[i] = 1; // Enable all notes in settings
     }
 
@@ -2084,18 +2051,11 @@ void switchMidiChannel() {
     turnOffAllNotes(true);
     // Increment or reset MIDI channel
     midiChannel = (midiChannel < layoutChannels[settings.currentLayout]) ? midiChannel + 1 : 1;
-    nonMidiDisplayed = millis();
+    nonMidiDisplayed = currentTime;
     // Update display with the new MIDI channel
     mcpArray[2].digitalWrite(tensDP, HIGH);
     updateMidiChannelDisplay(midiChannel);
 }
-
-// void resetPortamento() {
-//     // reset portamento state from before strumm
-//     if(lastPortamento[stateNumber] < 129) {
-//         MIDI.sendControlChange(5,lastPortamento[stateNumber],midiChannel);
-//     }
-// }
 
 void toggleStrummMode() {
     if(holdStates[stateNumber]) {
@@ -2133,6 +2093,17 @@ void toggleStrummMode() {
     }
 }
 
+void resetOctaveLeds() {
+    // Reset octave LEDs to the current octave
+    for (int j = 0; j < 9; j++) {
+        if (keysLast == octaveNote_array[j]) {
+            for (int n = 0; n < 7; n++) {
+                mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[j][n]);
+            }
+        }
+    }
+}
+
 //eeprom functions
 uint16_t calculateChecksum(const UserSettings& s) {
     const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&s);
@@ -2145,11 +2116,11 @@ uint16_t calculateChecksum(const UserSettings& s) {
 
 void markSettingsChanged() {
     settingsChanged = true;
-    eepromChangeTime = millis();
+    eepromChangeTime = currentTime;
 }
 
 void maybeSaveSettingsToEEPROM() {
-    if (settingsChanged && millis() - eepromChangeTime > eepromDelay) {
+    if (settingsChanged && currentTime - eepromChangeTime > eepromDelay) {
         // Add checksum before saving
         settings.checksum = calculateChecksum(settings);
 
@@ -2194,7 +2165,7 @@ void blink(int blinkNumber) {
     if (!isBlinking) {
         animationType = blinkNumber;
         isBlinking = true;
-        importantSettingStartTime = millis();
+        importantSettingStartTime = currentTime;
         for (int n=0; n < 7; n++){
             mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[animationFrames[animationType][0]][n]);
         }
