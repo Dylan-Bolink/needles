@@ -363,7 +363,8 @@ bool noteMidiLast[noteCount] = {0}; //last button state
 const byte minimumDelay = 2;
 byte noteStrumDelay[4] = {64,64,64,64};
 
-//strum millis start
+// This struct seems to be unused in the provided code.
+// I am leaving it here to avoid breaking other parts of your project.
 struct StrumState {
     bool strumming;
     byte baseNote;
@@ -373,10 +374,17 @@ struct StrumState {
 };
 
 #define MAX_POLYPHONY 10 // Adjust based on your needs
-StrumState strumStates[MAX_POLYPHONY];
+StrumState strumStatesStruct[MAX_POLYPHONY]; // Renamed to avoid conflict
 byte activeNotes[MAX_POLYPHONY];
 int activeNoteCount = 0;
-//strum millis end
+
+// --- START: NON-BLOCKING STRUM REFACTOR ---
+
+// ... (other static variables)
+
+// NEW: An array to hold the final MIDI note numbers for the current strum.
+static byte g_strum_notes_to_play[noteCount];
+
 
 bool setNewJoystick = false;
 bool lockJoystick = false;
@@ -408,8 +416,6 @@ const byte chordTable[16][4] = {
     {0, 4, 10, 15}      // Dominant 7♯9 15
 };
 
-bool chordChangePending = false; // True if a new chord change is pending
-bool keysActive = false;         // True if any key is actively pressed
 
 byte currentChord[4] = {0};  
 byte currentChordSize = 0;
@@ -451,6 +457,8 @@ const unsigned long eepromDelay = 15000; // 15 seconds
 
 byte quantize(int inputNote, byte selectedNote = 0);
 void turnOffAllNotes(bool force);
+void handleNewNote(byte newNote);
+void updateStrum();
 
 bool isMidiNoteOn = false;
 bool hasExternalController = false;
@@ -477,6 +485,31 @@ byte changekeys(byte a,byte b){  //function to change key base
     keysLast=a+b;
     return(keysLast);
 }
+
+
+// --- START: NON-BLOCKING STRUM REFACTOR ---
+
+// 1. Define the states for our strumming state machine.
+// Renamed to StrumMachineState to avoid conflict with your existing StrumState struct.
+enum StrumMachineState {
+    STRUM_IDLE,                 // Not currently strumming
+    STRUM_PLAYING_NOTE,         // A note is currently sounding
+    STRUM_PAUSED_BETWEEN_NOTES, // The silent gap between notes
+};
+
+// 2. State machine variables
+static StrumMachineState g_strum_state = STRUM_IDLE; // Global strum state
+static unsigned long g_strum_last_event_time = 0;    // Timer for events
+static unsigned long g_strum_delay_time = 0;         // Calculated delay for the current strum
+
+// Parameters for the active strum
+static byte g_strum_root_note = 0;
+static int  g_strum_note_index = 0;
+static int  g_strum_chord_size = 0;
+static bool g_strum_is_reversed = false;
+
+// --- END: NON-BLOCKING STRUM REFACTOR ---
+
 
 void setup() {
     // various
@@ -570,6 +603,11 @@ void setup() {
 }
 
 void loop() {
+    // --- START: NON-BLOCKING STRUM REFACTOR ---
+    // This function must be called on every loop to handle the strum timing.
+    updateStrum();
+    // --- END: NON-BLOCKING STRUM REFACTOR ---
+
     MIDI.read();
     currentTime = millis();
     // 7 Segment
@@ -690,6 +728,7 @@ void loop() {
             
             if(strummStates[stateNumber]) {
                 lastNoteStriked = -1;
+                g_strum_state = STRUM_IDLE; // Stop any ongoing strum
             }
         
             //change keyboard base up or down in octaves
@@ -707,6 +746,7 @@ void loop() {
             
             if(strummStates[stateNumber]) {
                 lastNoteStriked = -1;
+                g_strum_state = STRUM_IDLE; // Stop any ongoing strum
             }
         
             //change keyboard base up or down in octaves
@@ -826,57 +866,52 @@ void loop() {
         mcpArray[1].digitalWrite(shiftLedPin, holdCheck);
     }
 
-    // Loop for the 17-button keyboard
-    for (char n = 0; n < noteCount; n++) {
-        noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
+// Loop for the 18-button keyboard
+for (char n = 0; n < noteCount; n++) {
+    noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
 
-        if(midiHold) {
-            if (noteOn[n] == HIGH && noteMidiLast[n] != noteOn[n]) { // Key pressed
+    // Check if the note state has changed
+    if (noteOn[n] != noteLast[n]) {
+        if (noteOn[n] == HIGH) { // Key was PRESSED
+            if (midiHold) {
+                // Handle quantizer settings when MIDI button is held
                 if(holdStates[stateNumber]) {
                     MIDI.sendControlChange(64,0,midiChannel);
                     holdStates[stateNumber] = false;
                 }
-                
-                if (n < 5) {
-                    selectQuantizer(n);
-                } else if (n == 17) {
-                    resetQuantizer();
-                } else {
-                    toggleQuantizerNote(n - 5);
-                }
-                noteMidiLast[n] = noteOn[n];
+                if (n < 5) selectQuantizer(n);
+                else if (n == 17) resetQuantizer();
+                else toggleQuantizerNote(n - 5);
+            } else {
+                // Default behavior: handle the new note for playing/strumming
+                handleNewNote(n);
             }
-
-            if (noteOn[n] == LOW && noteMidiLast[n] != noteOn[n]) { // Key released
-                noteMidiLast[n] = noteOn[n];
-            }
-        } else if (noteOn[n] == HIGH && noteLast[n] != noteOn[n]) {
-            //Handle new note strumm is done in function
-            handleNewNote(n);
-            noteLast[n] = noteOn[n]; // Update note state
-        } else if (noteLast[n] != noteOn[n]) {
-            if(strummStates[stateNumber]) {
-                if (noteOn[n] == LOW && lastNoteStriked == n) { // Key released
-                    // Turn off the last note of the chord
-                    byte note = quantize(keysLast + n, lastChordNote);
-                    MIDI.sendNoteOff(note, velocityMap, midiChannel);
+        } else { // Key was RELEASED
+            if (strummStates[stateNumber]) {
+                // In strum mode, if this was the key that triggered the current strum, stop the sound.
+                if (lastNoteStriked == n) {
+                    MIDI.sendNoteOff(lastChordNote, velocityMap, midiChannel);
                     lastNoteStriked = -1;
-                    noteLast[n] = noteOn[n];
-                } else {
-                    noteLast[n] = noteOn[n];
+                    g_strum_state = STRUM_IDLE; // Stop the strum machine.
                 }
             } else {
-                if (noteOn[n] == LOW) { // Key released
-                    for (int i = 0; i < currentChordSize; i++) {
-                        byte note = quantize(keysLast + n, i);
-                        MIDI.sendNoteOff(note, velocityMap, midiChannel);
-                    }
-                    noteLast[n] = noteOn[n];
+                // In normal (non-strum) mode, turn off the played chord/note.
+                currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
+                for (int i = 0; i < currentChordSize; i++) {
+                    byte note = quantize(keysLast + n, i);
+                    MIDI.sendNoteOff(note, velocityMap, midiChannel);
                 }
             }
         }
+
+        // Update the last state for the key
+        if(midiHold) {
+            noteMidiLast[n] = noteOn[n];
+        }
+        noteLast[n] = noteOn[n];
     }
-    // End loop for the 17-button keyboard
+}
+// End loop for the 18-button keyboard
 
     // read the state button pins:
     tieState = digitalRead(tiePin);
@@ -1573,6 +1608,7 @@ void loop() {
                 //panic button strumm
                 MIDI.sendControlChange(123,0,midiChannel);
                 lastNoteStriked = -1;
+                g_strum_state = STRUM_IDLE; // Stop any ongoing strum
                 shortBlink(0); // Blink because delete recording
             } else if(legatoStates[stateNumber] == 1){
                 // Legato retrig so all
@@ -1730,7 +1766,7 @@ void loop() {
     //frame 1
     } else if ((isBlinking && currentTime - importantSettingStartTime >= animationFrameTimes[animationSpeed][0])) {
         for (int n=0; n < 7; n++){
-            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][1])][n]);
+            mcpArray[1].digitalWrite(ledPins[n], octaveLed_array[(animationFrames[animationType][0])][n]);
         }
     }
 
@@ -1899,6 +1935,13 @@ void handleInversionChange(byte newInversion) {
 }
 
 void turnOffAllNotes(bool force = false) {
+    if (strummStates[stateNumber] || g_strum_state != STRUM_IDLE) {
+        g_strum_state = STRUM_IDLE; // Stop any active strum
+        // Turn off the currently sounding strummed note
+        byte note_to_turn_off = quantize(g_strum_root_note, g_strum_note_index);
+        MIDI.sendNoteOff(note_to_turn_off, velocityMap, midiChannel);
+    }
+
     lastNoteStriked = -1;
     currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
     for (char n = 0; n < noteCount; n++) {
@@ -1924,49 +1967,136 @@ void applyNewNotes() {
     }
 }
 
-void handleNewNote(byte newNote) {
-    currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
-    if(strummStates[stateNumber]){ 
-        if (lastNoteStriked != -1) {
-            byte note = quantize(keysLast + lastNoteStriked, lastChordNote);
-            MIDI.sendNoteOff(note, velocityMap, midiChannel);
-            delay(minimumDelay);
-        }
+// --- START: NON-BLOCKING STRUM REFACTOR ---
 
-        lastNoteStriked = newNote;
+/**
+ * @brief Updates the non-blocking strum. Called continuously from loop().
+ *
+ * This function is the core of the non-blocking strumming logic. It checks
+ * if enough time has passed and then plays or stops the next note in the
+ * sequence based on the current state.
+ */
+ void updateStrum() {
+    // If the state machine is idle, there's nothing to do.
+    if (g_strum_state == STRUM_IDLE) {
+        return;
     }
 
-    if(strummStates[stateNumber] && noteStrumDelay[stateNumber] < 64) {
-        const byte delayTime = ((64 - noteStrumDelay[stateNumber]) * 3) + minimumDelay;
+    // Check if it's time for the next event (Note ON or Note OFF)
+    if (millis() - g_strum_last_event_time >= g_strum_delay_time) {
 
-        // Reverse strum the chord: play each note sequentially end on root note
-        for (int c = currentChordSize - 1; c >= 0; c--) { 
-            byte note = quantize(keysLast + newNote, c);
-            MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
-            noteDisplay(note);
-            delay(delayTime);                                       // Delay
-            lastChordNote = c;
-            if(c > 0) {                                            
-                MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
-                delay(delayTime);                                   // Delay
+        if (g_strum_state == STRUM_PLAYING_NOTE) {
+            // A note was playing, now it's time to turn it off.
+            byte note_to_turn_off = g_strum_notes_to_play[g_strum_note_index];
+            MIDI.sendNoteOff(note_to_turn_off, velocityMap, midiChannel);
+
+            // Advance to the next note in the chord sequence
+            g_strum_note_index += g_strum_is_reversed ? -1 : 1;
+
+            // Transition to the PAUSED state (the gap before the next note)
+            g_strum_state = STRUM_PAUSED_BETWEEN_NOTES;
+            g_strum_last_event_time = millis(); // Reset the timer for the pause
+
+        } else if (g_strum_state == STRUM_PAUSED_BETWEEN_NOTES) {
+            // The pause is over, time to play the next note.
+            byte note_to_play = g_strum_notes_to_play[g_strum_note_index];
+            MIDI.sendNoteOn(note_to_play, velocityMap, midiChannel);
+            noteDisplay(note_to_play);
+            lastChordNote = note_to_play; // Store the actual MIDI value of the last played note
+
+            // Check if this is the final note of the strum sequence
+            bool is_last_note = g_strum_is_reversed ? (g_strum_note_index == 0) : (g_strum_note_index == (g_strum_chord_size - 1));
+
+            if (is_last_note) {
+                // If it's the last note, the strum is finished. Go back to idle.
+                // The note is left ON. It will be turned off by the next key press or key release.
+                g_strum_state = STRUM_IDLE;
+            } else {
+                // Otherwise, transition to the PLAYING state for this new note
+                g_strum_state = STRUM_PLAYING_NOTE;
+                g_strum_last_event_time = millis(); // Reset timer for the note's duration
             }
         }
-    } else if(strummStates[stateNumber]) {
-        const byte delayTime = ((abs(noteStrumDelay[stateNumber] - 64)) * 3) + minimumDelay;
+    }
+}
 
-        // Strum the chord: play each note sequentially end on last chord note
-        for (int c = 0; c < currentChordSize; c++) { 
-            byte note = quantize(keysLast + newNote, c);
-            MIDI.sendNoteOn(note, velocityMap, midiChannel);        // Note ON
-            noteDisplay(note);
-            delay(delayTime);                                       // Delay
-            lastChordNote = c;
-            if(c < currentChordSize - 1) {                           
-                MIDI.sendNoteOff(note, velocityMap, midiChannel);   // Note OFF
-                delay(delayTime);                                   // Delay
-            }
+/**
+ * @brief Handles a new note input to trigger a chord or a non-blocking strum.
+ *
+ * @param newNote The keyboard index (0-17) of the pressed key.
+ */
+void handleNewNote(byte newNote) {
+    if(strummStates[stateNumber]){
+        // --- Strum Mode ---
+
+        // 1. Stop any notes from the previous strum.
+        // If the strum machine is running, stop the currently sounding note.
+        if (g_strum_state != STRUM_IDLE) {
+            byte note_to_turn_off = g_strum_notes_to_play[g_strum_note_index];
+            MIDI.sendNoteOff(note_to_turn_off, velocityMap, midiChannel);
         }
+        // If the machine was idle, a note might have been left ringing. Turn it off.
+        else if (lastNoteStriked != -1) {
+            MIDI.sendNoteOff(lastChordNote, velocityMap, midiChannel);
+        }
+
+        // 2. --- Setup the new strum ---
+        g_strum_chord_size = 0; // Reset size
+
+        // Determine strum direction and delay time from the pot. This now works for both modes.
+        if (noteStrumDelay[stateNumber] < 64) {
+            g_strum_is_reversed = true; // Reverse strum
+            g_strum_delay_time = ((64 - noteStrumDelay[stateNumber]) * 3) + minimumDelay;
+        } else {
+            g_strum_is_reversed = false; // Forward strum
+            g_strum_delay_time = ((abs(noteStrumDelay[stateNumber] - 64)) * 3) + minimumDelay;
+        }
+
+        // --- Populate the notes for the strum engine based on the mode ---
+        if (activeChord[stateNumber] != 0) {
+            // MODE 1: Chord Strumming (using chordTable)
+            lastNoteStriked = newNote; // The new note is the root.
+            byte tempChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
+            for (byte c = 0; c < tempChordSize; c++) {
+                if (c < noteCount) g_strum_notes_to_play[c] = quantize(keysLast + newNote, c);
+            }
+            g_strum_chord_size = tempChordSize;
+        } else {
+            // MODE 2: Manual Strumming (from held keys)
+            lastNoteStriked = newNote; // Use the triggering key to track the strum
+            byte current_note_idx = 0;
+            for (int i = 0; i < noteCount; i++) {
+                if (noteOn[i]) {
+                    if (current_note_idx < noteCount) { // Bounds check
+                        g_strum_notes_to_play[current_note_idx] = quantize(keysLast + i, 0); // Quantize each held note
+                        current_note_idx++;
+                    }
+                }
+            }
+            g_strum_chord_size = current_note_idx;
+        }
+
+        // 3. --- Kick off the first note ---
+        if (g_strum_chord_size == 0) {
+            g_strum_state = STRUM_IDLE;
+            lastNoteStriked = -1; // No strum is active
+            return;
+        }
+        
+        g_strum_note_index = g_strum_is_reversed ? (g_strum_chord_size - 1) : 0;
+        byte first_note = g_strum_notes_to_play[g_strum_note_index];
+        MIDI.sendNoteOn(first_note, velocityMap, midiChannel);
+        noteDisplay(first_note);
+        lastChordNote = first_note; // Store the actual MIDI note value
+
+        // 4. --- Update state machine ---
+        g_strum_state = (g_strum_chord_size <= 1) ? STRUM_IDLE : STRUM_PLAYING_NOTE;
+        g_strum_last_event_time = millis();
+
     } else {
+        // --- Normal (non-strummed) Chord/Note Mode ---
+        g_strum_state = STRUM_IDLE; // Ensure the strumming engine is stopped
+        currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
         for (byte c = 0; c < currentChordSize; c++) {
             byte note = quantize(keysLast + newNote, c);
             MIDI.sendNoteOn(note, velocityMap, midiChannel);
@@ -1976,6 +2106,9 @@ void handleNewNote(byte newNote) {
         }
     }
 }
+
+// --- END: NON-BLOCKING STRUM REFACTOR ---
+
 
 // Quantizer functions
 void selectQuantizer(byte quantizerIndex) {
