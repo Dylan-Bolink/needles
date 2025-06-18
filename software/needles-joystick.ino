@@ -7,7 +7,7 @@
 
 #include <MIDI.h>
 #include <Wire.h>
-#include "Adafruit_MCP23017.h"
+#include "Adafruit_MCP23017.hh"
 #include <EEPROM.h>
 Adafruit_MCP23017 mcpArray[3]; // mcpArray[0], mcpArray[1], mcpArray[2],
 
@@ -378,13 +378,6 @@ StrumState strumStatesStruct[MAX_POLYPHONY]; // Renamed to avoid conflict
 byte activeNotes[MAX_POLYPHONY];
 int activeNoteCount = 0;
 
-// --- START: NON-BLOCKING STRUM REFACTOR ---
-
-// ... (other static variables)
-
-// NEW: An array to hold the final MIDI note numbers for the current strum.
-static byte g_strum_notes_to_play[noteCount];
-
 
 bool setNewJoystick = false;
 bool lockJoystick = false;
@@ -394,8 +387,8 @@ unsigned long waitForJoystick = 0;
 byte joystickLastState = 0;
 int joystickMidpoint[4] = {0};
 
-int lastNoteStriked = -1; // Last note turned on
-byte lastChordNote = 0;
+int lastNoteStriked = -1; // Last note turned on from internal keyboard
+byte lastChordNote = 0; // Holds the last *MIDI note value* played by the strum engine
 
 const byte chordTable[16][4] = {
     {0},
@@ -462,6 +455,7 @@ void updateStrum();
 
 bool isMidiNoteOn = false;
 bool hasExternalController = false;
+
 // Function to handle MIDI note on message
 void handleNoteOn(byte channel, byte note, byte velocity) {
     hasExternalController = true;
@@ -490,7 +484,6 @@ byte changekeys(byte a,byte b){  //function to change key base
 // --- START: NON-BLOCKING STRUM REFACTOR ---
 
 // 1. Define the states for our strumming state machine.
-// Renamed to StrumMachineState to avoid conflict with your existing StrumState struct.
 enum StrumMachineState {
     STRUM_IDLE,                 // Not currently strumming
     STRUM_PLAYING_NOTE,         // A note is currently sounding
@@ -503,10 +496,10 @@ static unsigned long g_strum_last_event_time = 0;    // Timer for events
 static unsigned long g_strum_delay_time = 0;         // Calculated delay for the current strum
 
 // Parameters for the active strum
-static byte g_strum_root_note = 0;
 static int  g_strum_note_index = 0;
 static int  g_strum_chord_size = 0;
 static bool g_strum_is_reversed = false;
+static byte g_strum_notes_to_play[noteCount]; // Holds the notes for the current strum
 
 // --- END: NON-BLOCKING STRUM REFACTOR ---
 
@@ -603,13 +596,54 @@ void setup() {
 }
 
 void loop() {
-    // --- START: NON-BLOCKING STRUM REFACTOR ---
-    // This function must be called on every loop to handle the strum timing.
-    updateStrum();
-    // --- END: NON-BLOCKING STRUM REFACTOR ---
-
-    MIDI.read();
+    // --- FIX: MOVED STARTUP AND STATE LOGIC TO TOP OF LOOP ---
     currentTime = millis();
+    // First bootup ignore everything then set to midichannel 1
+    if (initStartup) {
+        if (midiChannel == 0) {
+            for (int j=0; j < 7; j++) {
+                mcpArray[2].digitalWrite(ones[j], num_array[1][j]);
+            }
+            midiChannel = 1;
+            importantSettingStartTime = currentTime;
+
+            // load settings from EEPROM and apply layout
+            loadSettingsFromEEPROM();
+            // Show the current layout on the leds
+            for (int n=0; n < 7; n++){
+                mcpArray[1].digitalWrite(ledPins[n], layoutLeds[settings.currentLayout][n]);
+            }
+            delay(100); // wait for settings to load
+            MIDI.sendControlChange(1,layoutCC[settings.currentLayout],rcChannel);
+        } else if (currentTime - importantSettingStartTime > 5000) {
+            initStartup = false;
+            resetOctaveLeds();
+        } else {
+            //check if there is any quantization
+            bool hasQuantization = false;
+            for (int i = 0; i < 12; i++) {
+                if (settings.activeQuantizer[i] == 0) {
+                    hasQuantization = true;
+                    break;
+                }
+            }
+            //blink leds if there is no quantization
+            if(hasQuantization){
+                for (int n=0; n < 7; n++){
+                    mcpArray[1].digitalWrite(ledPins[n], (layoutLeds[settings.currentLayout][n] && (currentTime / blinkInterval) % 2));
+                }
+            }
+        }
+    }
+
+    // This calculation MUST happen at the top of the loop to ensure it's valid.
+    stateNumber = midiChannel - 1;
+
+    updateStrum();
+    MIDI.read();
+    
+    // --- END FIX ---
+
     // 7 Segment
     MidiButtonState = mcpArray[1].digitalRead(midiButton);
 
@@ -866,52 +900,52 @@ void loop() {
         mcpArray[1].digitalWrite(shiftLedPin, holdCheck);
     }
 
-// Loop for the 18-button keyboard
-for (char n = 0; n < noteCount; n++) {
-    noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
+    // Loop for the 18-button keyboard
+    for (char n = 0; n < noteCount; n++) {
+        noteOn[n] = mcpArray[(notes[n] >> 4)].digitalRead(notes[n] & 0x0F);
 
-    // Check if the note state has changed
-    if (noteOn[n] != noteLast[n]) {
-        if (noteOn[n] == HIGH) { // Key was PRESSED
-            if (midiHold) {
-                // Handle quantizer settings when MIDI button is held
-                if(holdStates[stateNumber]) {
-                    MIDI.sendControlChange(64,0,midiChannel);
-                    holdStates[stateNumber] = false;
+        // Check if the note state has changed
+        if (noteOn[n] != noteLast[n]) {
+            if (noteOn[n] == HIGH) { // Key was PRESSED
+                if (midiHold) {
+                    // Handle quantizer settings when MIDI button is held
+                    if(holdStates[stateNumber]) {
+                        MIDI.sendControlChange(64,0,midiChannel);
+                        holdStates[stateNumber] = false;
+                    }
+                    if (n < 5) selectQuantizer(n);
+                    else if (n == 17) resetQuantizer();
+                    else toggleQuantizerNote(n - 5);
+                } else {
+                    // Default behavior: handle the new note for playing/strumming
+                    handleNewNote(n);
                 }
-                if (n < 5) selectQuantizer(n);
-                else if (n == 17) resetQuantizer();
-                else toggleQuantizerNote(n - 5);
-            } else {
-                // Default behavior: handle the new note for playing/strumming
-                handleNewNote(n);
+            } else { // Key was RELEASED
+                if (strummStates[stateNumber]) {
+                    // In strum mode, if this was the key that triggered the current strum, stop the sound.
+                    if (lastNoteStriked == n) {
+                        MIDI.sendNoteOff(lastChordNote, velocityMap, midiChannel);
+                        lastNoteStriked = -1;
+                        g_strum_state = STRUM_IDLE; // Stop the strum machine.
+                    }
+                } else {
+                    // In normal (non-strum) mode, turn off the played chord/note.
+                    currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
+                    for (int i = 0; i < currentChordSize; i++) {
+                        byte note = quantize(keysLast + n, i);
+                        MIDI.sendNoteOff(note, velocityMap, midiChannel);
+                    }
+                }
             }
-        } else { // Key was RELEASED
-            if (strummStates[stateNumber]) {
-                // In strum mode, if this was the key that triggered the current strum, stop the sound.
-                if (lastNoteStriked == n) {
-                    MIDI.sendNoteOff(lastChordNote, velocityMap, midiChannel);
-                    lastNoteStriked = -1;
-                    g_strum_state = STRUM_IDLE; // Stop the strum machine.
-                }
-            } else {
-                // In normal (non-strum) mode, turn off the played chord/note.
-                currentChordSize = calculateChordSize(chordTable[activeChord[stateNumber]]);
-                for (int i = 0; i < currentChordSize; i++) {
-                    byte note = quantize(keysLast + n, i);
-                    MIDI.sendNoteOff(note, velocityMap, midiChannel);
-                }
-            }
-        }
 
-        // Update the last state for the key
-        if(midiHold) {
-            noteMidiLast[n] = noteOn[n];
+            // Update the last state for the key
+            if(midiHold) {
+                noteMidiLast[n] = noteOn[n];
+            }
+            noteLast[n] = noteOn[n];
         }
-        noteLast[n] = noteOn[n];
     }
-}
-// End loop for the 18-button keyboard
+    // End loop for the 18-button keyboard
 
     // read the state button pins:
     tieState = digitalRead(tiePin);
@@ -1770,48 +1804,10 @@ for (char n = 0; n < noteCount; n++) {
         }
     }
 
-    // First bootup ignore everything then set to midichannel 1
-    if (midiChannel == 0 && initStartup){
-        for (int j=0; j < 7; j++) {
-            mcpArray[2].digitalWrite(ones[j], num_array[1][j]);
-        }
-        midiChannel = 1;
-        importantSettingStartTime = currentTime;
-
-        // load settings from EEPROM and apply layout
-        loadSettingsFromEEPROM();
-        // Show the current layout on the leds
-        for (int n=0; n < 7; n++){
-            mcpArray[1].digitalWrite(ledPins[n], layoutLeds[settings.currentLayout][n]);
-        }
-        delay(100); // wait for settings to load
-        MIDI.sendControlChange(1,layoutCC[settings.currentLayout],rcChannel);
-    } else if(initStartup == true && currentTime - importantSettingStartTime > 5000) {
-        initStartup = false;
-        resetOctaveLeds();
-    } else if(initStartup == true) {
-        //check if there is any quantization
-        // all values in activeQuantizer are 1
-        bool hasQuantization = false;
-        for (int i = 0; i < 12; i++) {
-            if (settings.activeQuantizer[i] == 0) {
-                hasQuantization = true;
-                break;
-            }
-        }
-        //blink leds if there is no quantization
-        if(hasQuantization){
-            for (int n=0; n < 7; n++){
-                mcpArray[1].digitalWrite(ledPins[n], (layoutLeds[settings.currentLayout][n] && (currentTime / blinkInterval) % 2));
-            }
-        }
-    }
-
     if(currentTime - nonMidiDisplayed > 2000) {
         updateMidiChannelDisplay(midiChannel);
     }
-
-    stateNumber = midiChannel - 1;
+    
     maybeSaveSettingsToEEPROM();
 }
 //End void loop
@@ -1938,7 +1934,7 @@ void turnOffAllNotes(bool force = false) {
     if (strummStates[stateNumber] || g_strum_state != STRUM_IDLE) {
         g_strum_state = STRUM_IDLE; // Stop any active strum
         // Turn off the currently sounding strummed note
-        byte note_to_turn_off = quantize(g_strum_root_note, g_strum_note_index);
+        byte note_to_turn_off = g_strum_notes_to_play[g_strum_note_index];
         MIDI.sendNoteOff(note_to_turn_off, velocityMap, midiChannel);
     }
 
@@ -1967,6 +1963,7 @@ void applyNewNotes() {
     }
 }
 
+
 // --- START: NON-BLOCKING STRUM REFACTOR ---
 
 /**
@@ -1976,7 +1973,7 @@ void applyNewNotes() {
  * if enough time has passed and then plays or stops the next note in the
  * sequence based on the current state.
  */
- void updateStrum() {
+void updateStrum() {
     // If the state machine is idle, there's nothing to do.
     if (g_strum_state == STRUM_IDLE) {
         return;
@@ -2005,7 +2002,7 @@ void applyNewNotes() {
             lastChordNote = note_to_play; // Store the actual MIDI value of the last played note
 
             // Check if this is the final note of the strum sequence
-            bool is_last_note = g_strum_is_reversed ? (g_strum_note_index == 0) : (g_strum_note_index == (g_strum_chord_size - 1));
+            bool is_last_note = g_strum_is_reversed ? (g_strum_note_index == 0) : (g_strum_chord_size - 1);
 
             if (is_last_note) {
                 // If it's the last note, the strum is finished. Go back to idle.
@@ -2021,7 +2018,7 @@ void applyNewNotes() {
 }
 
 /**
- * @brief Handles a new note input to trigger a chord or a non-blocking strum.
+ * @brief Handles a new note input from the INTERNAL KEYBOARD to trigger a chord or a non-blocking strum.
  *
  * @param newNote The keyboard index (0-17) of the pressed key.
  */
@@ -2030,12 +2027,10 @@ void handleNewNote(byte newNote) {
         // --- Strum Mode ---
 
         // 1. Stop any notes from the previous strum.
-        // If the strum machine is running, stop the currently sounding note.
         if (g_strum_state != STRUM_IDLE) {
             byte note_to_turn_off = g_strum_notes_to_play[g_strum_note_index];
             MIDI.sendNoteOff(note_to_turn_off, velocityMap, midiChannel);
         }
-        // If the machine was idle, a note might have been left ringing. Turn it off.
         else if (lastNoteStriked != -1) {
             MIDI.sendNoteOff(lastChordNote, velocityMap, midiChannel);
         }
